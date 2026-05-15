@@ -68,7 +68,7 @@ public class LazyLoader<T> {
      * 根据相关性筛选并加载。
      *
      * <p>生产级：用 Embedding 相似度或 LLM 判断相关性。
-     * 学习项目：用简单的关键词匹配。
+     * 当前实现：基于关键词匹配的按需加载。
      */
     public Map<String, T> loadRelevant(String query) {
         Map<String, T> result = new ConcurrentHashMap<>();
@@ -99,7 +99,7 @@ public class LazyLoader<T> {
     }
 
     private boolean isRelevant(LazyEntry<T> entry, String query) {
-        // 简化实现：检查 metadata 中是否包含 query 关键词
+        // 检查 metadata 中是否包含 query 关键词
         if (entry.metadata == null) return false;
         String lowerQuery = query.toLowerCase();
         return entry.metadata.values().stream()

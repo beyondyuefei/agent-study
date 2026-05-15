@@ -15,8 +15,8 @@ import com.kuoge.agentstudy.production.runtime.session.ContentBlock;
 import com.kuoge.agentstudy.production.runtime.session.ConversationMessage;
 import com.kuoge.agentstudy.production.runtime.session.MessageRole;
 import com.kuoge.agentstudy.production.runtime.usage.TokenUsage;
-import com.kuoge.agentstudy.tutorial.tool.Tool;
-import com.kuoge.agentstudy.tutorial.tool.ToolRegistry;
+import com.kuoge.agentstudy.production.tool.Tool;
+import com.kuoge.agentstudy.production.tool.ToolRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;

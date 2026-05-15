@@ -107,7 +107,7 @@ agent-study/
 │   └── react-loop-vs-toolcalladvisor-comparison.md
 ├── src/
 │   ├── main/
-│   │   ├── java/com/psylos/agentstudy/
+│   │   ├── java/com/kuoge/agentstudy/
 │   │   │   ├── AgentStudyApplication.java     # Spring Boot 入口
 │   │   │   ├── tutorial/                      # 教学版 ReAct【基础学习】
 │   │   │   │   ├── ReActLoop.java             # ⭐ 外循环核心【必读源码】
@@ -170,7 +170,7 @@ agent-study/
 │   │   └── resources/
 │   │       └── application.yml                # 配置文件
 │   └── test/
-│       └── java/com/psylos/agentstudy/
+│       └── java/com/kuoge/agentstudy/
 │           ├── tutorial/
 │           │   └── ReActLoopTest.java         # ⭐ 教学版测试（7 个场景）
 │           ├── production/

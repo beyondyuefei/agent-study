@@ -13,7 +13,7 @@ import java.util.List;
  * <p>对应 claw-code Rust 实现中 {@code conversation.rs/AssistantEvent} 的聚合结果：
  * 将流式事件（TextDelta、ToolUse、Thinking、Usage）聚合成一条完整的消息。
  *
- * <p>与教学版 {@link com.kuoge.agentstudy.tutorial.ReActLoop.LlmResponse} 的区别：
+ * <p>与基础版 LlmResponse（仅含 thought + action）的区别：
  * <ul>
  *   <li>支持多个 ContentBlock（一条消息可同时包含文本 + 多个工具调用）</li>
  *   <li>支持 Thinking block（Claude 的 extended thinking）</li>

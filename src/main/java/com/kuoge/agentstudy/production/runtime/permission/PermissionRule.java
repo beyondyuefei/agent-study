@@ -7,7 +7,7 @@ import java.util.Objects;
  *
  * <p>对应 claw-code Rust 实现：{@code permissions.rs/PermissionRule}
  *
- * <p>规则格式（简化版）：
+ * <p>规则格式：
  * <pre>
  * "bash"                    → 匹配工具名 bash，任意输入
  * "bash(git:*)"            → 匹配 bash 工具，输入以 "git" 开头
@@ -150,7 +150,7 @@ public record PermissionRule(
             return "";
         }
         // 简单启发式：如果输入是 JSON，尝试提取 command/path/file_path 等字段
-        // 学习项目简化处理：返回原始输入的前 200 字符
+        // 输入过长时截断，返回前 200 字符
         String trimmed = input.trim();
         if (trimmed.startsWith("{") && trimmed.contains("\"command\"")) {
             int start = trimmed.indexOf("\"command\"") + 10;

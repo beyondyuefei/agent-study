@@ -12,4 +12,4 @@ spring:
 
 logging:
   level:
-    com.kuoge.agentstudy.react: DEBUG
+    com.kuoge.agentstudy: DEBUG

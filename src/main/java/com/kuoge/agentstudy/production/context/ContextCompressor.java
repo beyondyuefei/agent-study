@@ -158,7 +158,7 @@ public class ContextCompressor {
 
     private void lazyLoad(ContextSegment seg) {
         // 生产级：根据当前任务分析需要哪些工具，只加载相关工具定义
-        // 学习项目：简化处理，标记为已加载但内容为空
+        // 当前实现：标记为已加载但内容为空
         seg.setContent("");
         log.debug("Lazy loaded segment: {}", seg.getType());
     }

@@ -4,7 +4,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 内存版偏好存储（学习项目用）。
+ * 内存版偏好存储。
  */
 public class InMemoryPreferenceStore implements PreferenceStore {
 

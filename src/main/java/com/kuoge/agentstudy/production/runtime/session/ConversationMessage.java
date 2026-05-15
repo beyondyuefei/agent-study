@@ -12,7 +12,7 @@ import java.util.List;
  *
  * <p>对应 claw-code Rust 实现：{@code session.rs/ConversationMessage}
  *
- * <p>与教学版 ReActLoop 使用纯字符串拼接上下文的关键区别：
+ * <p>与基础版 ReActLoop 使用纯字符串拼接上下文的关键区别：
  * <ul>
  *   <li><b>多 block 结构</b>：一条消息可包含文本 + 思考 + 工具调用的组合</li>
  *   <li><b>精确识别工具调用</b>：通过 {@link ContentBlock.ToolUseBlock} 精确提取待执行工具</li>

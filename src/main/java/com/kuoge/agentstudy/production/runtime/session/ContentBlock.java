@@ -11,7 +11,7 @@ package com.kuoge.agentstudy.production.runtime.session;
  *   <li>{@link ToolResultBlock} — 工具执行结果</li>
  * </ul>
  *
- * <p>使用结构化内容块而非纯字符串，是生产级 Agent 与教学级 Agent 的核心区别：
+ * <p>使用结构化内容块而非纯字符串，是生产级 Agent 与基础版 Agent 的核心区别：
  * 可以精确识别消息中的工具调用、思考过程、执行结果，从而进行精确的循环控制。
  */
 public sealed interface ContentBlock {

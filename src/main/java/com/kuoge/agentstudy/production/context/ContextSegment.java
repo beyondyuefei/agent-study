@@ -98,7 +98,7 @@ public class ContextSegment {
                 }
             }
             case SUMMARIZE -> {
-                // 简化：用 "...[summarized: N chars]" 标记
+                // 压缩标记：用 "...[summarized: N chars]" 表示
                 // 生产级应调用 LLM 生成摘要
                 this.content = "[Summary of " + type.name() + ": "
                         + content.length() + " chars → summarized]\n";

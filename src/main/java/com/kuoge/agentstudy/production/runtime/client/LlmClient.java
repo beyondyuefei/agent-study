@@ -7,7 +7,7 @@ import java.util.List;
 /**
  * LLM 客户端抽象接口 —— 生产级版本。
  *
- * <p>与教学版 {@link com.kuoge.agentstudy.tutorial.ReActLoop.LlmClient} 的关键升级：
+ * <p>与基础版字符串上下文 LLM 客户端的关键升级：
  * <ul>
  *   <li><b>输入结构化</b>：传入 {@link ConversationMessage} 列表而非纯字符串</li>
  *   <li><b>输出结构化</b>：返回 {@link LlmResponse}，包含文本、思考、工具调用、用量</li>

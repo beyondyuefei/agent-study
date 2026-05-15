@@ -6,7 +6,7 @@ import java.util.Optional;
 /**
  * 偏好存储接口。
  *
- * <p>生产级实现应支持持久化（数据库/Redis），学习项目用内存实现。
+ * <p>生产级实现应支持持久化（数据库/Redis），当前为内存实现。
  */
 public interface PreferenceStore {
 

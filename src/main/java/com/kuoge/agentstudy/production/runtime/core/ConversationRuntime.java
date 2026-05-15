@@ -8,15 +8,14 @@ import com.kuoge.agentstudy.production.runtime.hook.HookEvent;
 import com.kuoge.agentstudy.production.runtime.hook.HookResult;
 import com.kuoge.agentstudy.production.runtime.hook.ToolHook;
 import com.kuoge.agentstudy.production.runtime.permission.PermissionOutcome;
-import com.kuoge.agentstudy.production.runtime.permission.PermissionPolicy;
 import com.kuoge.agentstudy.production.runtime.session.AgentSession;
 import com.kuoge.agentstudy.production.runtime.session.ContentBlock;
 import com.kuoge.agentstudy.production.runtime.session.ConversationMessage;
 import com.kuoge.agentstudy.production.runtime.session.MessageRole;
 import com.kuoge.agentstudy.production.runtime.usage.TokenUsage;
 import com.kuoge.agentstudy.production.runtime.usage.UsageTracker;
-import com.kuoge.agentstudy.tutorial.tool.Tool;
-import com.kuoge.agentstudy.tutorial.tool.ToolRegistry;
+import com.kuoge.agentstudy.production.tool.Tool;
+import com.kuoge.agentstudy.production.tool.ToolRegistry;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
@@ -27,9 +26,9 @@ import java.util.*;
  *
  * <p>对应 claw-code Rust 实现：{@code conversation.rs/ConversationRuntime}
  *
- * <h3>与教学版 ReActLoop 的核心区别</h3>
+ * <h3>与基础版 ReActLoop 的核心区别</h3>
  * <table border="1">
- *   <tr><th>维度</th><th>ReActLoop（教学版）</th><th>ConversationRuntime（生产级）</th></tr>
+ *   <tr><th>维度</th><th>ReActLoop（基础版）</th><th>ConversationRuntime（生产级）</th></tr>
  *   <tr><td>消息模型</td><td>StringBuilder 拼接</td><td>ConversationMessage + ContentBlock 结构化</td></tr>
  *   <tr><td>Turn 内迭代</td><td>1 轮 LLM = 1 步</td><td>1 Turn 可包含 N 轮 LLM（工具调用链）</td></tr>
  *   <tr><td>工具调用</td><td>单工具串行</td><td>支持多工具并行（LLM 一次返回多个 ToolUse）</td></tr>
@@ -212,7 +211,7 @@ public class ConversationRuntime {
             if (compaction.wasCompacted()) {
                 // 替换会话为压缩后的版本
                 // 注意：我们需要一种方式来替换 session，但 AgentSession 的 messages 是私有的
-                // 简化处理：在 AgentSession 中提供 replaceMessages 方法
+                // 通过 AgentSession.replaceMessages 替换消息列表
                 session.replaceMessages(compaction.compactedSession().getMessages());
                 log.info("[Turn {}] Auto-compacted: removed {} messages",
                         turnCount + 1, compaction.removedMessageCount());
@@ -253,7 +252,7 @@ public class ConversationRuntime {
                     "Permission denied: " + deny.reason(), true);
         }
         if (permission instanceof PermissionOutcome.Ask ask) {
-            // 在简化版中，Ask 视为 Deny（因为没有交互 UI）
+            // 当前实现：Ask 视为 Deny（待接入交互 UI 后可改为真正的 Ask 流程）
             return ConversationMessage.toolResult(toolUseId, toolName,
                     "Permission requires approval: " + ask.reason(), true);
         }
@@ -341,7 +340,7 @@ public class ConversationRuntime {
     }
 
     private void runHealthProbe() {
-        // 简化版健康检查：验证工具执行器是否可响应
+        // 基础健康检查：验证工具执行器是否可响应
         log.debug("Running session health probe");
         // 在实际实现中，这里会尝试执行一个无害的探针工具
     }
@@ -382,7 +381,7 @@ public class ConversationRuntime {
         // 尝试解析为 JSON
         if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
             try {
-                // 简化版：使用简单的 key-value 解析（不依赖外部 JSON 库）
+                // 使用简单的 key-value 解析（不依赖外部 JSON 库）
                 return parseSimpleJson(trimmed);
             } catch (Exception e) {
                 // 解析失败，返回原始字符串作为 "raw" 参数

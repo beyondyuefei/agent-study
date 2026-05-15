@@ -4,9 +4,10 @@ import com.kuoge.agentstudy.production.agent.ProductionReActAgent;
 import com.kuoge.agentstudy.production.context.*;
 import com.kuoge.agentstudy.production.cost.*;
 import com.kuoge.agentstudy.production.memory.*;
-import com.kuoge.agentstudy.tutorial.Action;
-import com.kuoge.agentstudy.tutorial.ReActLoop;
-import com.kuoge.agentstudy.tutorial.tool.Tool;
+import com.kuoge.agentstudy.production.agent.AgentLlmClient;
+import com.kuoge.agentstudy.production.agent.AgentLlmResponse;
+import com.kuoge.agentstudy.production.model.Action;
+import com.kuoge.agentstudy.production.tool.Tool;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -263,21 +264,21 @@ class ProductionAgentTest {
     @DisplayName("整合：ProductionReActAgent 完整执行流程")
     void testProductionAgentEndToEnd() {
         // 构建 Mock LLM：第一轮调用工具，第二轮给出答案
-        ReActLoop.LlmClient mockLlm = new ReActLoop.LlmClient() {
+        AgentLlmClient mockLlm = new AgentLlmClient() {
             private int count = 0;
             @Override
-            public ReActLoop.LlmResponse call(String context) {
+            public AgentLlmResponse call(String context) {
                 count++;
                 if (count == 1) {
                     // 验证上下文包含用户偏好（production agent 使用 XML 标签包裹）
                     assertTrue(context.contains("JUnit"),
                             "上下文应注入用户偏好，实际上下文=" + context.substring(0, Math.min(200, context.length())));
-                    return ReActLoop.LlmResponse.action(
+                    return AgentLlmResponse.action(
                             "需要查询天气",
                             Action.of("getWeather", Map.of("city", "北京"))
                     );
                 }
-                return ReActLoop.LlmResponse.answer("北京今天晴，25°C");
+                return AgentLlmResponse.answer("北京今天晴，25°C");
             }
         };
 
@@ -314,13 +315,13 @@ class ProductionAgentTest {
     }
 
     @Test
-    @DisplayName("整合：对比教学版 vs 生产版的上下文差异")
-    void testEducationalVsProductionContext() {
-        // 教学版：StringBuilder 简单拼接
-        StringBuilder eduContext = new StringBuilder();
-        eduContext.append("System: You are AI\n");
-        eduContext.append("User: hello\n");
-        String eduResult = eduContext.toString();
+    @DisplayName("整合：对比基础版 vs 生产版的上下文差异")
+    void testBasicVsProductionContext() {
+        // 基础版：StringBuilder 简单拼接
+        StringBuilder basicContext = new StringBuilder();
+        basicContext.append("System: You are AI\n");
+        basicContext.append("User: hello\n");
+        String basicResult = basicContext.toString();
 
         // 生产版：9段式结构化
         ContextCompressor compressor = new ContextCompressor(10000);
@@ -330,7 +331,7 @@ class ProductionAgentTest {
         String prodResult = compressor.build();
 
         // 两者都包含基本内容
-        assertTrue(eduResult.contains("You are AI"));
+        assertTrue(basicResult.contains("You are AI"));
         assertTrue(prodResult.contains("You are AI"));
 
         // 但生产版有结构化优势
@@ -338,8 +339,8 @@ class ProductionAgentTest {
         assertTrue(compressor.getCurrentTotalTokens() > 0, "生产版可精确计算 token");
 
         // 打印对比
-        System.out.println("\n--- Educational Context ---");
-        System.out.println(eduResult);
+        System.out.println("\n--- Basic Context ---");
+        System.out.println(basicResult);
         System.out.println("--- Production Context ---");
         System.out.println(prodResult);
         compressor.printStatus();

@@ -3,8 +3,8 @@ package com.kuoge.agentstudy.production.agent;
 import com.kuoge.agentstudy.production.context.*;
 import com.kuoge.agentstudy.production.cost.*;
 import com.kuoge.agentstudy.production.memory.*;
-import com.kuoge.agentstudy.tutorial.*;
-import com.kuoge.agentstudy.tutorial.tool.*;
+import com.kuoge.agentstudy.production.model.*;
+import com.kuoge.agentstudy.production.tool.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -14,9 +14,9 @@ import java.util.*;
 /**
  * 生产级 ReAct Agent —— 整合记忆、上下文压缩、成本控制的完整实现。
  *
- * <h3>相比教学版 ReActLoop 的增强</h3>
+ * <h3>相比基础 ReActLoop 的增强</h3>
  * <table border="1">
- *   <tr><th>能力</th><th>教学版 ReActLoop</th><th>ProductionReActAgent</th></tr>
+ *   <tr><th>能力</th><th>基础 ReActLoop</th><th>ProductionReActAgent</th></tr>
  *   <tr><td>记忆</td><td>无</td><td>PreferenceMemory（核心偏好 + 归档偏好）</td></tr>
  *   <tr><td>上下文管理</td><td>StringBuilder 拼接</td><td>9段式结构化压缩</td></tr>
  *   <tr><td>成本控制</td><td>无</td><td>TokenBudget + PromptCache + CostTracker</td></tr>
@@ -43,7 +43,7 @@ import java.util.*;
 @RequiredArgsConstructor
 public class ProductionReActAgent {
 
-    private final ReActLoop.LlmClient llmClient;
+    private final AgentLlmClient llmClient;
     private final PreferenceMemory preferenceMemory;
     private final ToolRegistry toolRegistry;
     private final int contextBudget;
@@ -81,7 +81,7 @@ public class ProductionReActAgent {
 
         // ===== 6. 设置工具定义（LAZY_LOAD —— 只加载相关工具）=====
         // 生产级：分析用户意图，只加载可能用到的工具
-        // 学习项目：简化，加载全部工具定义
+        // 当前实现：加载全部工具定义（后续可按语义匹配优化）
         final String toolDefs = toolRegistry.toPromptText();
         compressor.segment(SegmentType.TOOL_DEFINITIONS).setContent(toolDefs);
         budget.recordInput(ContextSegment.estimateTokens(toolDefs));
@@ -108,10 +108,10 @@ public class ProductionReActAgent {
 
             // LLM 调用
             final long llmStart = System.currentTimeMillis();
-            final ReActLoop.LlmResponse response = llmClient.call(context);
+            final AgentLlmResponse response = llmClient.call(context);
             final long llmLatency = System.currentTimeMillis() - llmStart;
 
-            // 估算 token（简化）
+            // 估算 token
             final int outputTokens = ContextSegment.estimateTokens(response.thought());
             costTracker.recordLlmCall(contextTokens, outputTokens, llmLatency, "default");
             budget.recordOutput(outputTokens);
@@ -194,12 +194,12 @@ public class ProductionReActAgent {
     }
 
     public static class Builder {
-        private ReActLoop.LlmClient llmClient;
+        private AgentLlmClient llmClient;
         private PreferenceMemory preferenceMemory;
         private final ToolRegistry toolRegistry = new ToolRegistry();
         private int contextBudget = 8000;
 
-        public Builder withLlmClient(ReActLoop.LlmClient client) {
+        public Builder withLlmClient(AgentLlmClient client) {
             this.llmClient = client;
             return this;
         }

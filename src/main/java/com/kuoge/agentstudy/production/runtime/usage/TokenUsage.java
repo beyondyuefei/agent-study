@@ -28,7 +28,7 @@ public record TokenUsage(
     }
 
     /**
-     * 仅含输入/输出的简化用量。
+     * 基础用量模型（input / output / cache）。
      */
     public TokenUsage(int inputTokens, int outputTokens) {
         this(inputTokens, outputTokens, 0, 0);

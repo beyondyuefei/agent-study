@@ -22,9 +22,9 @@ import java.util.UUID;
  *   <li><b>Token 估算</b>：实时估算当前会话的 token 占用</li>
  * </ol>
  *
- * <h3>与教学版的区别</h3>
+ * <h3>与基础版的区别</h3>
  * <table>
- *   <tr><th></th><th>教学版 ReActLoop</th><th>AgentSession</th></tr>
+ *   <tr><th></th><th>基础版 ReActLoop</th><th>AgentSession</th></tr>
  *   <tr><td>上下文存储</td><td>StringBuilder 拼接</td><td>List&lt;ConversationMessage&gt; 结构化</td></tr>
  *   <tr><td>工具调用跟踪</td><td>字符串解析 Action</td><td>ContentBlock.ToolUseBlock 精确提取</td></tr>
  *   <tr><td>会话持久化</td><td>无</td><td>支持快照/恢复（接口预留）</td></tr>
