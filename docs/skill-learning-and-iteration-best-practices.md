@@ -341,22 +341,26 @@ SOP 层 (.md)                    Runtime 层 (Java)              Governance 层 
 ```
 领域模型                实现状态            代码位置（如有）
 ─────────────────────────────────────────────────────────────────
-Skill                    ❌ 未实现         仅存在于本文概念层
-SkillSOP                 ⚠️ 半实现         本文档自身即为 SOP 层产物
-SkillRuntime             ✅ 已实现         production/ 包下全量代码
-SkillGovernance          ❌ 未实现         本文档 4.3 节为伪代码示例
-SkillVersion             ❌ 未实现         本文档 4.3 节为伪代码示例
-PromptTemplate           ⚠️ 半实现         PromptTemplateCache（仅缓存层）
+Skill                    ✅ 已实现         production.skill.Skill
+SkillSOP                 ⚠️ 半实现         本文档 + production.skill.sop.SkillSop
+SkillRuntime             ✅ 已实现         production.skill.runtime.SkillRuntime
+SkillGovernance          ✅ 已实现         production.skill.governance.SkillGovernance
+SkillVersion             ✅ 已实现         production.skill.governance.SkillVersion
+PromptTemplate           ⚠️ 半实现         PromptTemplateCache（缓存层）
 ToolDefinition           ✅ 已实现         production.tool.Tool + ToolRegistry
-EvalSuite                ❌ 未实现         本文档 4.1 节为伪代码示例
-EvalCase                 ❌ 未实现         同上
-EvalResult               ❌ 未实现         同上
-Feedback                 ❌ 未实现         概念层
-Deployment               ❌ 未实现         本文档 4.3 节为伪代码示例
-SkillRegistry            ❌ 未实现         概念层
+EvalSuite                ✅ 已实现         production.skill.eval.EvalSuite
+EvalCase                 ✅ 已实现         production.skill.eval.EvalCase
+EvalResult               ✅ 已实现         production.skill.eval.EvalResult
+Feedback                 ✅ 已实现         production.skill.governance.Feedback
+Deployment               ✅ 已实现         production.skill.governance.Deployment
+SkillRegistry            ✅ 已实现         production.skill.governance.SkillRegistry
 ```
 
-> **说明**：本项目当前重点建设的是 **Skill Runtime 层**，SOP 层以 Markdown 文档形式存在（即本文及 `docs/` 目录下的 `.md` 文件），Governance 层（版本管理、Eval 框架、灰度发布）尚未进入编码阶段，仅以设计文档和伪代码形式存在。
+> **说明**：
+> - **Runtime 层**：`production/` 包下已全量实现（对话运行时、上下文压缩、权限、成本、记忆）
+> - **Skill 层**：本次补充实现，包含 `production.skill.*` 下的根实体、Runtime 封装、Eval 框架、Governance 治理、SOP 存储
+> - **SOP 层**：以 Markdown 文档形式存在（本文及 `docs/` 目录），同时有 `SkillSop` 类做结构化存储
+> - **Tutorial 层**：`tutorial.skill.*` 提供简化版实现，便于理解核心概念
 
 ### 2.2 Skill Runtime 层 → 代码类映射表
 
@@ -396,7 +400,31 @@ SkillRegistry            ❌ 未实现         概念层
 | `UserPreference` | `com.kuoge.agentstudy.production.memory.UserPreference` (record) | memory | 用户偏好条目（confidence / freshnessScore） |
 | `CostTracker` | `com.kuoge.agentstudy.production.cost.CostTracker` | cost | 成本追踪器 |
 | `TokenBudget` | `com.kuoge.agentstudy.production.cost.TokenBudget` | cost | Token 预算管理 |
-| `PromptTemplate` | `com.kuoge.agentstudy.production.cost.PromptTemplateCache` | cost | Prompt 模板缓存（治理层完整实现待建设） |
+| `PromptTemplate` | `com.kuoge.agentstudy.production.cost.PromptTemplateCache` | cost | Prompt 模板缓存 |
+| `Skill` | `com.kuoge.agentstudy.production.skill.Skill` | skill | Skill 根实体（Builder 模式） |
+| `SkillMetadata` | `com.kuoge.agentstudy.production.skill.SkillMetadata` | skill | 轻量级元数据索引 |
+| `SkillStatus` | `com.kuoge.agentstudy.production.skill.SkillStatus` (enum) | skill | DRAFT / GRAYSCALE / ACTIVE / DEPRECATED / ARCHIVED |
+| `SkillRuntime` | `com.kuoge.agentstudy.production.skill.runtime.SkillRuntime` | skill.runtime | Skill 级 Runtime 封装 |
+| `SkillRuntimeConfig` | `com.kuoge.agentstudy.production.skill.runtime.SkillRuntimeConfig` | skill.runtime | Runtime 配置（maxIterations / contextBudget / autoCompaction） |
+| `EvalSuite` | `com.kuoge.agentstudy.production.skill.eval.EvalSuite` | skill.eval | 评估套件（UNIT / INTEGRATION / E2E） |
+| `EvalCase` | `com.kuoge.agentstudy.production.skill.eval.EvalCase` | skill.eval | 评估用例（input / expected / difficulty） |
+| `EvalResult` | `com.kuoge.agentstudy.production.skill.eval.EvalResult` | skill.eval | 单条评估结果 |
+| `EvalReport` | `com.kuoge.agentstudy.production.skill.eval.EvalReport` | skill.eval | 聚合评估报告（passRate / averageScore / regressions） |
+| `Evaluator` | `com.kuoge.agentstudy.production.skill.eval.Evaluator` (interface) | skill.eval | 评估器接口 |
+| `ExactMatchEvaluator` | `com.kuoge.agentstudy.production.skill.eval.ExactMatchEvaluator` | skill.eval | 精确匹配评估器 |
+| `LlmAsJudgeEvaluator` | `com.kuoge.agentstudy.production.skill.eval.LlmAsJudgeEvaluator` | skill.eval | LLM-as-Judge 评估器 |
+| `EvalRunner` | `com.kuoge.agentstudy.production.skill.eval.EvalRunner` | skill.eval | Eval 自动化执行器 |
+| `EvalHistory` | `com.kuoge.agentstudy.production.skill.eval.EvalHistory` | skill.eval | 评估历史存储 + 回归检测 |
+| `SkillRegistry` | `com.kuoge.agentstudy.production.skill.governance.SkillRegistry` | skill.governance | Skill 注册中心（内存实现） |
+| `SkillVersion` | `com.kuoge.agentstudy.production.skill.governance.SkillVersion` | skill.governance | 不可变版本记录 |
+| `SkillVersionManager` | `com.kuoge.agentstudy.production.skill.governance.SkillVersionManager` | skill.governance | 版本管理器（激活 / 灰度 / 回滚） |
+| `Deployment` | `com.kuoge.agentstudy.production.skill.governance.Deployment` | skill.governance | 部署记录 |
+| `DeploymentStatus` | `com.kuoge.agentstudy.production.skill.governance.DeploymentStatus` (enum) | skill.governance | INACTIVE / GRAYSCALE / ACTIVE / DEPRECATED |
+| `Feedback` | `com.kuoge.agentstudy.production.skill.governance.Feedback` | skill.governance | 反馈统一抽象 |
+| `SkillGovernance` | `com.kuoge.agentstudy.production.skill.governance.SkillGovernance` | skill.governance | 治理配置（阈值 / 告警 / 自动回滚） |
+| `GovernanceDashboard` | `com.kuoge.agentstudy.production.skill.governance.GovernanceDashboard` | skill.governance | 治理看板（健康检查 / 告警聚合） |
+| `SkillSop` | `com.kuoge.agentstudy.production.skill.sop.SkillSop` | skill.sop | SOP 结构化实体 |
+| `SkillSopStore` | `com.kuoge.agentstudy.production.skill.sop.SkillSopStore` (interface) | skill.sop | SOP 存储接口 + 内存实现 |
 
 ### 2.3 三层架构的代码映射
 
@@ -434,17 +462,20 @@ SkillRegistry            ❌ 未实现         概念层
 │                                                                             │
 │                                    ↓ 被管理 / 被观测                         │
 │                                                                             │
-│  Governance 层（治理层）  ←── 尚未编码，仅设计文档                             │
+│  Governance 层（治理层）  ←── 已编码实现（memory 实现，生产环境接 Redis/DB）    │
 │  ─────────────────────                                                       │
-│  产物：本文档 4.3 节「版本管理与 A-B 测试」中的伪代码                           │
-│        + 第 五 章「对 AI Agent 系统的具体借鉴建议」                            │
+│  核心包：com.kuoge.agentstudy.production.skill.governance.*                   │
 │                                                                             │
-│  待建设模块：                                                                │
-│  • SkillRegistry —— 注册表 + 版本历史 + 依赖图谱                              │
-│  • EvalRunner —— 自动化执行 EvalSuite，生成回归报告                           │
+│  • SkillRegistry —— 注册表 + 元数据索引 + 搜索                                │
+│  • SkillVersionManager —— 版本管理（激活 / 灰度分桶 / 回滚）                   │
+│  • GovernanceDashboard —— 健康检查 + 告警聚合 + 状态看板                       │
+│  • EvalRunner + EvalHistory —— 自动化执行 + 回归检测                          │
+│  • Feedback —— 隐式/显式反馈统一模型                                         │
+│                                                                             │
+│  待建设（需要 Web 后台 + 数据库）：                                           │
 │  • Prompt Studio —— 在线编辑 Prompt + 实时预览 + 版本对比                     │
-│  • Feedback Inbox —— 聚合隐式/显式反馈                                       │
-│  • Deployment Manager —— 灰度/全量/回滚 + 配置中心联动                         │
+│  • Feedback Inbox UI —— 可视化反馈处理流程                                    │
+│  • 持久化存储 —— 当前为内存实现，生产环境需接入数据库                            │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -453,19 +484,19 @@ SkillRegistry            ❌ 未实现         概念层
 
 | 领域模型（概念） | 设计模型（代码类） | 实现状态 | 备注 |
 |---|---|---|---|
-| `Skill` | 无对应单类 | ❌ | 当前以 Agent 粒度组织，Skill 作为逻辑概念存在 |
-| `SkillSOP` | `docs/skill-learning-and-iteration-best-practices.md` | ⚠️ | 本文档即为 SOP 层产物 |
-| `SkillRuntime` | `ConversationRuntime` + `ProductionReActAgent` | ✅ | 核心已全量实现 |
-| `SkillGovernance` | 无 | ❌ | 待建设，当前只有设计思路 |
-| `SkillVersion` | 无 | ❌ | 待建设，当前 Prompt 外置到 `PromptTemplateCache` |
-| `PromptTemplate` | `PromptTemplateCache` | ⚠️ | 仅缓存层，无版本管理和在线编辑 |
-| `ToolDefinition` | `Tool` (interface) + `ToolRegistry` | ✅ | 运行时工具定义完整实现 |
-| `EvalSuite` | 无 | ❌ | 4.1 节为伪代码，未进入编码 |
-| `EvalCase` | 无 | ❌ | 同上 |
-| `EvalResult` | 无 | ❌ | 同上 |
-| `Feedback` | 无 | ❌ | 待建设 |
-| `Deployment` | 无 | ❌ | 4.3 节为伪代码，未进入编码 |
-| `SkillRegistry` | 无 | ❌ | 待建设 |
+| `Skill` | `production.skill.Skill` | ✅ | Skill 根实体，聚合版本/工具/元数据 |
+| `SkillSOP` | `production.skill.sop.SkillSop` + `.md` 文档 | ⚠️ | 结构化 SOP + Markdown 手册 |
+| `SkillRuntime` | `production.skill.runtime.SkillRuntime` + `ConversationRuntime` | ✅ | Skill 级 Runtime 封装 + 底层对话运行时 |
+| `SkillGovernance` | `production.skill.governance.SkillGovernance` | ✅ | 质量阈值、告警策略、自动回滚配置 |
+| `SkillVersion` | `production.skill.governance.SkillVersion` + `SkillVersionManager` | ✅ | 不可变版本 + 灰度/全量/回滚 |
+| `PromptTemplate` | `production.cost.PromptTemplateCache` | ⚠️ | 缓存层，版本管理由 SkillVersionManager 覆盖 |
+| `ToolDefinition` | `production.tool.Tool` + `ToolRegistry` | ✅ | 运行时工具定义完整实现 |
+| `EvalSuite` | `production.skill.eval.EvalSuite` + `EvalRunner` | ✅ | 评估套件 + 自动化执行器 |
+| `EvalCase` | `production.skill.eval.EvalCase` | ✅ | 用例（input / expected / difficulty） |
+| `EvalResult` | `production.skill.eval.EvalResult` + `EvalReport` | ✅ | 单条结果 + 聚合报告 |
+| `Feedback` | `production.skill.governance.Feedback` | ✅ | 隐式/显式反馈统一抽象 |
+| `Deployment` | `production.skill.governance.Deployment` | ✅ | 部署记录（部署/灰度/回滚/废弃） |
+| `SkillRegistry` | `production.skill.governance.SkillRegistry` | ✅ | 注册中心 + 元数据索引 + 依赖图谱预留 |
 
 ### 2.5 代码阅读路径建议
 
@@ -480,6 +511,13 @@ SkillRegistry            ❌ 未实现         概念层
 | **成本与预算** | `production.cost/` | `CostTracker` + `TokenBudget` |
 | **记忆系统** | `production.memory/` | `PreferenceMemory` + `UserPreference` |
 | **会话压缩** | `production.runtime.compact/` | `SessionCompactor` + `CompactionConfig` |
+| **Skill 根实体与生命周期** | `production.skill/` | `Skill` + `SkillStatus` |
+| **Skill Runtime 封装** | `production.skill.runtime/` | `SkillRuntime` + `SkillRuntimeConfig` |
+| **Eval 框架** | `production.skill.eval/` | `EvalSuite` → `EvalRunner` → `EvalReport` |
+| **版本管理与灰度** | `production.skill.governance/` | `SkillVersionManager`（灰度分桶 / 回滚） |
+| **治理看板** | `production.skill.governance/` | `GovernanceDashboard` + `SkillRegistry` |
+| **SOP 存储** | `production.skill.sop/` | `SkillSop` + `SkillSopStore` |
+| **Tutorial 层快速入门** | `tutorial.skill/` | `SkillRegistry` + `SkillEvaluator` |
 
 ---
 
