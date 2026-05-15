@@ -9,9 +9,7 @@
 
 ### 1.1 为什么创建这个项目
 
-在学习 AI Agent 的过程中，随着系统复杂度增加，需要建立 **Skill 治理体系**来管理 Skill 的沉淀迭代和 ROI 归因。
-
-在学习过程中，发现以下概念容易混淆，需要专门的学习项目来动手实践：
+在学习 AI Agent 过程中，发现以下概念容易混淆，需要专门的学习项目来动手实践：
 
 1. **Skill 的三层定义**：SOP（.md 手册）vs Runtime（Java 代码）vs Governance（后台系统）
 2. **ReAct 外循环 vs ToolCallAdvisor 内循环**：Claude Code 的长程 Agent 循环 vs Spring AI 的单次工具调用
@@ -103,7 +101,6 @@ agent-study/
 ├── CLAUDE.md                                  # 本文件：持久化上下文
 ├── docs/                                      # 学习文档
 │   ├── skill-learning-and-iteration-best-practices.md
-│   ├── skill-governance-and-roi-attribution-design.md
 │   └── react-loop-vs-toolcalladvisor-comparison.md
 ├── src/
 │   ├── main/

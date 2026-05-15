@@ -20,7 +20,6 @@ mvn spring-boot:run
 | 文档 | 内容 |
 |---|---|
 | `docs/skill-learning-and-iteration-best-practices.md` | Skill 迭代优化最佳实践（Claude 架构解析） |
-| `docs/skill-governance-and-roi-attribution-design.md` | 三系统联动治理架构设计 |
 | `docs/react-loop-vs-toolcalladvisor-comparison.md` | ReAct 外循环 vs ToolCallAdvisor 内循环深度对比 |
 | `CLAUDE.md` | 项目持久化上下文（沟通历史、设计决策、TODO） |
 
