@@ -24,9 +24,425 @@
 
 ---
 
-## 二、技术思路与实现对比
+## 二、领域模型
 
-### 2.1 循环结构对比
+> 本节从领域驱动设计（DDD）视角，抽象出 ReAct Loop 与 ToolCallAdvisor 涉及的核心模型及其关联关系，帮助读者建立统一的概念图谱。
+
+### 2.1 核心模型一览
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        ReAct / ToolCallAdvisor 领域模型                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   ┌──────────────┐     1:N     ┌──────────────────┐                       │
+│   │    Agent     │◄────────────│   AgentSession   │                       │
+│   │  (AI Agent)  │             │   (会话/上下文)   │                       │
+│   └──────┬───────┘             └────────┬─────────┘                       │
+│          │                              │                                   │
+│          │ 1:1                          │ 1:1                               │
+│          ▼                              ▼                                   │
+│   ┌──────────────┐              ┌──────────────────┐                       │
+│   │   SkillSet   │              │  AgentContext    │                       │
+│   │  (技能集合)   │              │ (请求/用户/场景)  │                       │
+│   └──────┬───────┘              └──────────────────┘                       │
+│          │                                                                  │
+│          │ 1:N                                                              │
+│          ▼                                                                  │
+│   ┌──────────────┐              ┌──────────────────┐     1:N     ┌───────┐ │
+│   │     Tool     │◄─────────────│    ToolCall      │◄────────────│LoopStep│ │
+│   │  (工具定义)   │              │   (工具调用实例)  │             │(循环步)│ │
+│   └──────────────┘              └──────────────────┘             └───┬───┘ │
+│                                                                     │     │
+│                              ┌──────────────────┐                   │     │
+│                              │   ReActLoop      │◄──────────────────┘     │
+│                              │  (主循环/编排器)  │                         │
+│                              └────────┬─────────┘                         │
+│                                       │ 1:1                               │
+│                                       ▼                                   │
+│                              ┌──────────────────┐                         │
+│                              │  ToolCallAdvisor │                         │
+│                              │ (工具调用顾问)    │                         │
+│                              └────────┬─────────┘                         │
+│                                       │ 1:1                               │
+│                                       ▼                                   │
+│                              ┌──────────────────┐                         │
+│                              │   AdvisorChain   │                         │
+│                              │   (顾问链)        │                         │
+│                              └──────────────────┘                         │
+│                                                                             │
+│   ┌──────────────┐              ┌──────────────────┐     1:N     ┌───────┐ │
+│   │  ChatClient  │◄─────────────│     Message      │◄────────────│ ChatMemory│
+│   │ (聊天客户端)  │              │    (消息)         │             │(记忆)  │ │
+│   └──────────────┘              └──────────────────┘             └───────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 2.2 模型关联关系
+
+| 关联双方 | 关系类型 | 说明 |
+|---|---|---|
+| `Agent` → `AgentSession` | **1:N** | 一个 Agent 可处理多个会话，每个会话有独立的上下文生命周期 |
+| `AgentSession` → `AgentContext` | **1:1** | 每个会话绑定一个上下文，包含 userId、scene、sessionId 等 |
+| `Agent` → `SkillSet` | **1:1** | 每个 Agent 拥有一组可用技能（即注册的工具集合） |
+| `SkillSet` → `Tool` | **1:N** | 一个技能集合包含多个工具定义（`@Tool` 方法） |
+| `Tool` → `ToolCall` | **1:N** | 一个工具定义可被多次调用，每次调用产生一个 ToolCall 实例 |
+| `ReActLoop` → `LoopStep` | **1:N** | 一个 ReAct 主循环包含多轮步骤（Step 1 → Step N） |
+| `LoopStep` → `ToolCall` | **1:N** | 单步内 LLM 可能生成多个并行工具调用（如同时查库存和查价格） |
+| `ChatClient` → `ToolCallAdvisor` | **1:1** | ToolCallAdvisor 附着于 ChatClient，负责驱动工具调用内循环 |
+| `ToolCallAdvisor` → `AdvisorChain` | **1:1** | ToolCallAdvisor 是 AdvisorChain 中的一个节点，按 order 参与编排 |
+| `ChatMemory` → `Message` | **1:N** | 对话记忆由多条 Message 组成（System / User / Assistant / Tool） |
+
+### 2.3 核心模型字段
+
+#### Agent（AI Agent 主体）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `agentId` | String | Agent 唯一标识，如 `customer-service-agent` |
+| `agentType` | Enum | 类型：`SIMPLE_QUERY` / `REACT_LONG_HORIZON` / `RAG_RETRIEVAL` |
+| `skillSet` | SkillSet | 当前 Agent 可用的技能集合 |
+| `maxSteps` | int | 最大循环步数，ReAct Agent 通常 10-50，简单 Agent 为 1 |
+| `systemPrompt` | String | 系统级角色定义 Prompt |
+
+#### AgentSession（会话实例）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `sessionId` | String | 会话唯一标识（UUID） |
+| `agentId` | String | 所属 Agent ID |
+| `status` | Enum | 会话状态：`ACTIVE` / `PAUSED` / `COMPLETED` / `ERROR` |
+| `createdAt` | Instant | 会话创建时间 |
+| `lastActiveAt` | Instant | 最后活跃时间 |
+
+#### AgentContext（请求上下文）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `sessionId` | String | 关联的会话 ID |
+| `userId` | String | 用户唯一标识 |
+| `instruction` | String | 当前用户指令 |
+| `scene` | String | 业务场景标签，如 `CUSTOMER_SERVICE` / `PRODUCT_SEARCH` |
+| `metadata` | Map | 扩展参数（如灰度版本号、traceId） |
+
+#### ReActLoop（主循环/编排器）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `loopId` | String | 循环实例 ID |
+| `sessionId` | String | 关联会话 ID |
+| `currentStep` | int | 当前执行到第几步 |
+| `maxIterations` | int | 最大迭代次数 |
+| `terminationReason` | Enum | 终止原因：`TASK_COMPLETED` / `MAX_STEPS` / `USER_INTERRUPT` / `UNRECOVERABLE_ERROR` |
+| `steps` | List&lt;LoopStep&gt; | 已执行的步骤列表 |
+
+#### LoopStep（循环步骤）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `stepIndex` | int | 步骤序号（从 0 开始） |
+| `thought` | String | LLM 推理过程（Thought） |
+| `action` | String | 决策动作，如 `READ_FILE` / `EXECUTE_TOOL` / `EDIT_CODE` |
+| `toolCalls` | List&lt;ToolCall&gt; | 本步骤生成的工具调用列表 |
+| `observation` | String | 执行后观察到的结果 |
+| `timestamp` | Instant | 步骤执行时间 |
+
+#### Tool（工具定义）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `toolName` | String | 工具唯一名称，对应 `@Tool(name=...)` |
+| `description` | String | 工具描述，**直接影响模型 tool choice 质量** |
+| `parameterSchema` | JSON Schema | 参数结构定义（Spring AI 自动生成） |
+| `targetBean` | Object | 工具方法所在的 Spring Bean 实例 |
+| `timeoutMs` | long | 工具执行超时时间 |
+
+#### ToolCall（工具调用实例）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `callId` | String | 调用唯一 ID（LLM 生成） |
+| `toolName` | String | 调用的工具名称 |
+| `arguments` | Map&lt;String, Object&gt; | 实际传入的参数键值对 |
+| `result` | String | 工具执行结果（格式化后） |
+| `status` | Enum | 调用状态：`PENDING` / `SUCCESS` / `FAILED` / `TIMEOUT` |
+| `durationMs` | long | 执行耗时 |
+
+#### ToolCallAdvisor（工具调用顾问）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `advisorId` | String | Advisor 标识 |
+| `order` | int | 在 AdvisorChain 中的排序（数值越小越外层） |
+| `toolCallingManager` | ToolCallingManager | 工具调用管理器，负责解析与反射执行 |
+| `maxToolCallRounds` | int | 最大工具调用轮次，默认 5 |
+
+#### Message（消息）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `messageId` | String | 消息唯一 ID |
+| `role` | Enum | 角色：`SYSTEM` / `USER` / `ASSISTANT` / `TOOL` |
+| `content` | String | 消息文本内容 |
+| `toolCalls` | List&lt;ToolCall&gt; | ASSISTANT 消息中附带的工具调用请求 |
+| `toolCallId` | String | TOOL 消息中回指的 callId |
+| `timestamp` | Instant | 消息时间戳 |
+
+### 2.4 两个视角下的模型差异
+
+| 模型 | Claude Code ReAct 视角 | ToolCallAdvisor 视角 |
+|---|---|---|
+| **循环主体** | `ReActLoop` 是显式外部编排器，由 Agent 自己驱动 | `ToolCallAdvisor` 是隐式内环组件，由框架驱动 |
+| **Step 粒度** | `LoopStep` 是**业务级步骤**（如"读取 pom.xml → 分析 → 修改"） | 一轮 tool-call 只是**技术级子步骤**，通常 1-2 轮即结束 |
+| **上下文管理** | Agent 主动维护 `ChatMemory`，需手动总结/截断 | `ChatMemoryAdvisor` 自动管理，应用层无感知 |
+| **Tool 范围** | `Tool` 可以是任意系统操作（文件/网络/进程） | `Tool` 仅限于 Spring Bean 中被 `@Tool` 注解的方法 |
+| **终止判断** | `ReActLoop` 判断"任务是否完成" | `ToolCallAdvisor` 判断"是否还有 toolCalls" |
+
+---
+
+## 三、设计模型
+
+> 本节将领域模型中的抽象概念映射到本项目代码中的具体类，给出完整的包路径和字段对应关系。阅读代码时，可对照此表快速定位。
+
+### 3.1 领域模型 → 代码类映射总表
+
+| 领域模型 | 代码类（完整路径） | 所在层级 | 说明 |
+|---|---|---|---|
+| `Agent` | `com.kuoge.agentstudy.tutorial.ReActAgent` | tutorial | ReAct Agent 入口 facade，封装 `ReActLoop` |
+| `Agent` | `com.kuoge.agentstudy.production.agent.ProductionReActAgent` | production | 生产级 Agent，整合记忆/压缩/成本控制 |
+| `ReActLoop` | `com.kuoge.agentstudy.tutorial.ReActLoop` | tutorial | 基础版 ReAct 外循环（StringBuilder 上下文） |
+| `ReActLoop` | `com.kuoge.agentstudy.production.runtime.core.ConversationRuntime` | production | 生产级对话运行时（结构化消息 + Turn 内迭代） |
+| `LoopStep` | `com.kuoge.agentstudy.tutorial.ReActStep` | tutorial | 单步记录（Thought + Action + Observation） |
+| `LoopStep` | `com.kuoge.agentstudy.production.model.ReActStep` | production | 生产级单步记录（与 tutorial 同构） |
+| `Action` | `com.kuoge.agentstudy.tutorial.Action` | tutorial | 工具调用动作（toolName + arguments） |
+| `Action` | `com.kuoge.agentstudy.production.model.Action` | production | 生产级 Action（与 tutorial 同构） |
+| `Observation` | `com.kuoge.agentstudy.tutorial.Observation` | tutorial | 工具执行结果（content + success） |
+| `Observation` | `com.kuoge.agentstudy.production.model.Observation` | production | 生产级 Observation（与 tutorial 同构） |
+| `Tool` | `com.kuoge.agentstudy.tutorial.tool.Tool` (interface) | tutorial | 工具接口（name / description / execute） |
+| `Tool` | `com.kuoge.agentstudy.production.tool.Tool` (interface) | production | 生产级工具接口（与 tutorial 同构） |
+| `ToolRegistry` | `com.kuoge.agentstudy.tutorial.tool.ToolRegistry` | tutorial | 工具注册中心（LinkedHashMap 存储） |
+| `ToolRegistry` | `com.kuoge.agentstudy.production.tool.ToolRegistry` | production | 生产级工具注册中心 |
+| `ToolExecutor` | `com.kuoge.agentstudy.tutorial.tool.ToolExecutor` | tutorial | 工具执行器（解析 Action → 反射调用 Tool） |
+| `ToolExecutor` | `com.kuoge.agentstudy.production.tool.ToolExecutor` | production | 生产级工具执行器 |
+| `AgentSession` | `com.kuoge.agentstudy.production.runtime.session.AgentSession` | production | 会话管理器（消息历史 + Fork + 压缩记录） |
+| `Message` | `com.kuoge.agentstudy.production.runtime.session.ConversationMessage` | production | 结构化消息（role + blocks + usage） |
+| `ContentBlock` | `com.kuoge.agentstudy.production.runtime.session.ContentBlock` (sealed interface) | production | 内容块：Text / Thinking / ToolUse / ToolResult |
+| `MessageRole` | `com.kuoge.agentstudy.production.runtime.session.MessageRole` (enum) | production | SYSTEM / USER / ASSISTANT / TOOL |
+| `LlmClient` | `com.kuoge.agentstudy.tutorial.ReActLoop.LlmClient` (inner interface) | tutorial | 基础版 LLM 客户端（String 上下文） |
+| `LlmClient` | `com.kuoge.agentstudy.production.runtime.client.LlmClient` (interface) | production | 生产级 LLM 客户端（结构化消息列表） |
+| `LlmResponse` | `com.kuoge.agentstudy.tutorial.ReActLoop.LlmResponse` (inner record) | tutorial | 基础版响应（thought + action） |
+| `LlmResponse` | `com.kuoge.agentstudy.production.runtime.client.LlmResponse` (record) | production | 生产级响应（blocks + usage） |
+| `TurnSummary` | `com.kuoge.agentstudy.production.runtime.core.TurnSummary` (record) | production | 单次 Turn 执行摘要 |
+| `RuntimeConfig` | `com.kuoge.agentstudy.production.runtime.core.RuntimeConfig` (record) | production | 运行时配置（maxIterations / permissionPolicy / compaction） |
+| `TokenUsage` | `com.kuoge.agentstudy.production.runtime.usage.TokenUsage` (record) | production | Token 用量（input / output / cacheCreate / cacheRead） |
+| `UsageTracker` | `com.kuoge.agentstudy.production.runtime.usage.UsageTracker` | production | 会话级用量累积追踪 |
+| `ToolHook` | `com.kuoge.agentstudy.production.runtime.hook.ToolHook` (interface) | production | 工具钩子（pre / post / failure） |
+| `HookResult` | `com.kuoge.agentstudy.production.runtime.hook.HookResult` (record) | production | 钩子执行结果（denied / failed / cancelled / messages） |
+| `PermissionPolicy` | `com.kuoge.agentstudy.production.runtime.permission.PermissionPolicy` | production | 权限策略引擎（allow / deny / ask 规则） |
+| `PermissionMode` | `com.kuoge.agentstudy.production.runtime.permission.PermissionMode` (enum) | production | Allow / Prompt / WorkspaceWrite / DangerFullAccess |
+| `PermissionOutcome` | `com.kuoge.agentstudy.production.runtime.permission.PermissionOutcome` (sealed) | production | Allow / Deny / Ask |
+| `SessionCompactor` | `com.kuoge.agentstudy.production.runtime.compact.SessionCompactor` | production | 会话自动压缩器（摘要 + 边界保护） |
+| `CompactionConfig` | `com.kuoge.agentstudy.production.runtime.compact.CompactionConfig` (record) | production | 压缩配置（preserveRecent / maxTokens） |
+| `CompactionResult` | `com.kuoge.agentstudy.production.runtime.compact.CompactionResult` (record) | production | 压缩结果（summary / compactedSession / removedCount） |
+| `ContextCompressor` | `com.kuoge.agentstudy.production.context.ContextCompressor` | production | 9段式上下文压缩器 |
+| `ContextSegment` | `com.kuoge.agentstudy.production.context.ContextSegment` | production | 上下文段（type / content / strategy / tokens） |
+| `SegmentType` | `com.kuoge.agentstudy.production.context.SegmentType` (enum) | production | SYSTEM_IDENTITY / USER_PREFERENCE / ... / SCRATCHPAD |
+| `CompressionStrategy` | `com.kuoge.agentstudy.production.context.CompressionStrategy` (enum) | production | PRESERVE / TRUNCATE / SUMMARIZE / EVICT / LAZY_LOAD |
+| `PreferenceMemory` | `com.kuoge.agentstudy.production.memory.PreferenceMemory` | production | 偏好记忆系统（Core + Archival） |
+| `UserPreference` | `com.kuoge.agentstudy.production.memory.UserPreference` (record) | production | 用户偏好条目（confidence / freshness） |
+| `CostTracker` | `com.kuoge.agentstudy.production.cost.CostTracker` | production | 成本追踪器（LLM + Tool 调用记录） |
+| `TokenBudget` | `com.kuoge.agentstudy.production.cost.TokenBudget` | production | Token 预算管理 |
+| `PromptTemplateCache` | `com.kuoge.agentstudy.production.cost.PromptTemplateCache` | production | Prompt 模板缓存 |
+
+### 3.2 核心类的字段速查
+
+#### ReActLoop（tutorial 层）
+
+```java
+public class ReActLoop {
+    private final LlmClient llmClient;      // LLM 客户端接口
+    private final ToolRegistry toolRegistry; // 工具注册表
+    private final ToolExecutor toolExecutor; // 工具执行器
+    private final ReActConfig config;        // 配置
+    private final List<ReActStep> steps;     // 执行轨迹
+}
+
+public record ReActConfig(
+    String systemPrompt,           // 系统提示词
+    int maxSteps,                  // 最大步数（默认 10）
+    boolean enableContextCompression, // 是否启用上下文压缩
+    int contextMaxLength           // 上下文最大长度（默认 8000）
+) {}
+
+public record LlmResponse(String thought, Action action) {}
+```
+
+#### ConversationRuntime（production 层）
+
+```java
+public class ConversationRuntime {
+    private final AgentSession session;        // 会话状态
+    private final LlmClient llmClient;         // 生产级 LLM 客户端
+    private final ToolRegistry toolRegistry;   // 工具注册表
+    private final RuntimeConfig config;        // 运行时配置
+    private final UsageTracker usageTracker;   // 用量追踪
+    private final SessionCompactor compactor;  // 会话压缩器
+    private final List<ToolHook> hooks;        // 注册的工具钩子
+    private int turnCount;                     // 已完成 Turn 数
+}
+
+public record RuntimeConfig(
+    String systemPrompt,               // 系统提示词
+    int maxIterationsPerTurn,          // 每 Turn 最大迭代数
+    int maxTurnsPerSession,            // 每 Session 最大 Turn 数
+    CompactionConfig compactionConfig, // 压缩配置
+    PermissionPolicy permissionPolicy, // 权限策略
+    boolean autoCompactionEnabled,     // 是否自动压缩
+    int autoCompactionTokenThreshold   // 自动压缩 token 阈值
+) {}
+```
+
+#### AgentSession（production 层）
+
+```java
+public class AgentSession {
+    private final String sessionId;                    // 会话 ID（16 位 UUID）
+    private final Instant createdAt;                   // 创建时间
+    private Instant updatedAt;                         // 最后更新时间
+    private final List<ConversationMessage> messages;  // 消息列表
+    private final List<CompactionRecord> compactionHistory; // 压缩历史
+    private final List<PromptEntry> promptHistory;     // Prompt 审计记录
+    private String workspaceRoot;                      // 工作空间根目录
+}
+
+public record CompactionRecord(
+    int count,                // 压缩次数序号
+    int removedMessageCount,  // 移除消息数
+    String summary,           // 摘要内容
+    Instant timestamp         // 压缩时间
+) {}
+
+public record PromptEntry(Instant timestamp, String text) {}
+```
+
+#### ConversationMessage（production 层）
+
+```java
+@Builder
+public record ConversationMessage(
+    MessageRole role,           // 角色：SYSTEM / USER / ASSISTANT / TOOL
+    List<ContentBlock> blocks,  // 内容块列表
+    TokenUsage usage            // 本次消息对应的 Token 用量
+) {}
+```
+
+#### ContentBlock（production 层）
+
+```java
+public sealed interface ContentBlock {
+    int estimateTokens();
+}
+
+// 四种实现：
+record TextBlock(String text) implements ContentBlock;
+record ThinkingBlock(String thinking, String signature) implements ContentBlock;
+record ToolUseBlock(String toolUseId, String toolName, String input) implements ContentBlock;
+record ToolResultBlock(String toolUseId, String toolName, String output, boolean isError)
+    implements ContentBlock;
+```
+
+### 3.3 包结构一览
+
+```
+com.kuoge.agentstudy
+├── tutorial/                          ← 教学/简化版（对应基础 ReAct）
+│   ├── ReActAgent.java                ← Agent 入口 facade
+│   ├── ReActLoop.java                 ← ReAct 外循环核心
+│   ├── ReActStep.java                 ← 单步记录
+│   ├── Action.java                    ← 工具调用动作
+│   ├── Observation.java               ← 观察结果
+│   └── tool/
+│       ├── Tool.java                  ← 工具接口
+│       ├── ToolRegistry.java          ← 工具注册中心
+│       └── ToolExecutor.java          ← 工具执行器
+│
+└── production/                        ← 生产级实现（对应完整 ReAct + 治理）
+    ├── agent/
+    │   ├── ProductionReActAgent.java  ← 生产级 Agent 入口
+    │   ├── AgentLlmClient.java        ← Agent 专用 LLM 客户端适配
+    │   └── AgentLlmResponse.java      ← Agent 专用响应结构
+    ├── runtime/
+    │   ├── core/
+    │   │   ├── ConversationRuntime.java  ← 对话运行时核心
+    │   │   ├── RuntimeConfig.java        ← 运行时配置
+    │   │   └── TurnSummary.java          ← Turn 执行摘要
+    │   ├── session/
+    │   │   ├── AgentSession.java         ← 会话管理器
+    │   │   ├── ConversationMessage.java  ← 结构化消息
+    │   │   ├── ContentBlock.java         ← 内容块（sealed interface）
+    │   │   └── MessageRole.java          ← 消息角色枚举
+    │   ├── client/
+    │   │   ├── LlmClient.java            ← LLM 客户端接口
+    │   │   └── LlmResponse.java          ← LLM 结构化响应
+    │   ├── usage/
+    │   │   ├── TokenUsage.java           ← Token 用量记录
+    │   │   ├── UsageTracker.java         ← 用量累积追踪
+    │   │   └── CostEstimator.java        ← 成本估算
+    │   ├── compact/
+    │   │   ├── SessionCompactor.java     ← 会话压缩器
+    │   │   ├── CompactionConfig.java     ← 压缩配置
+    │   │   └── CompactionResult.java     ← 压缩结果
+    │   ├── hook/
+    │   │   ├── ToolHook.java             ← 工具钩子接口
+    │   │   ├── HookResult.java           ← 钩子结果
+    │   │   └── HookEvent.java            ← 钩子事件枚举
+    │   └── permission/
+    │       ├── PermissionPolicy.java     ← 权限策略引擎
+    │       ├── PermissionMode.java       ← 权限模式枚举
+    │       ├── PermissionOutcome.java    ← 权限结果（sealed）
+    │       └── PermissionRule.java       ← 权限规则
+    ├── context/
+    │   ├── ContextCompressor.java        ← 9段式上下文压缩器
+    │   ├── ContextSegment.java           ← 上下文段
+    │   ├── SegmentType.java              ← 段类型枚举
+    │   └── CompressionStrategy.java      ← 压缩策略枚举
+    ├── memory/
+    │   ├── PreferenceMemory.java         ← 偏好记忆系统
+    │   ├── UserPreference.java           ← 用户偏好条目
+    │   ├── PreferenceStore.java          ← 偏好存储接口
+    │   └── InMemoryPreferenceStore.java  ← 内存存储实现
+    ├── cost/
+    │   ├── CostTracker.java              ← 成本追踪器
+    │   ├── TokenBudget.java              ← Token 预算
+    │   ├── PromptTemplateCache.java      ← Prompt 缓存
+    │   └── LazyLoader.java               ← 懒加载工具
+    ├── model/
+    │   ├── ReActStep.java                ← 生产级单步记录
+    │   ├── Action.java                   ← 生产级 Action
+    │   └── Observation.java              ← 生产级 Observation
+    └── tool/
+        ├── Tool.java                     ← 生产级工具接口
+        ├── ToolRegistry.java             ← 生产级工具注册中心
+        └── ToolExecutor.java             ← 生产级工具执行器
+```
+
+### 3.4 学习路径建议
+
+| 目标 | 从哪个类开始 | 重点看 |
+|---|---|---|
+| **理解 ReAct 核心循环** | `ReActLoop.run(String)` | tutorial 层，只有 60 行，无任何干扰 |
+| **理解生产级消息模型** | `ConversationMessage` + `ContentBlock` | 结构化 vs 字符串的区别 |
+| **理解上下文压缩** | `ContextCompressor.build()` | 9 段式压缩策略 |
+| **理解权限控制** | `PermissionPolicy.authorize()` | 规则引擎的优先级设计 |
+| **理解会话管理** | `AgentSession.pushMessage()` | 完整性校验 + Fork |
+| **理解成本追踪** | `CostTracker` + `UsageTracker` | 精确到每次调用的记账 |
+
+---
+
+## 四、技术思路与实现对比
+
+### 4.1 循环结构对比
 
 #### Claude Code ReAct（完整 Agent 级循环）
 
@@ -120,7 +536,7 @@
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 在 ReAct 六步模型中的定位
+### 4.2 在 ReAct 六步模型中的定位
 
 参考 `skill-learning-and-iteration-best-practices.md` 中的 ReAct 六步模型：
 
@@ -141,7 +557,7 @@ Step 6: 循环判断(Should Continue?)        ← 两者都有，但策略完全
 
 **关键区别**：ToolCallAdvisor 只覆盖了 Step 3-5，且是在**单次 `ChatClient.call()` 调用**的边界内完成的。Claude Code 的 ReAct 则覆盖了全部六步，且循环是**跨多次独立 LLM API 请求**的。
 
-### 2.3 代码层面的差异
+### 4.3 代码层面的差异
 
 | 维度 | Claude Code ReAct | Spring AI ToolCallAdvisor |
 |---|---|---|
@@ -156,7 +572,7 @@ Step 6: 循环判断(Should Continue?)        ← 两者都有，但策略完全
 
 ---
 
-## 三、两者关系：子集 vs 全集
+## 五、两者关系：子集 vs 全集
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -228,9 +644,9 @@ Step 6: 循环判断(Should Continue?)        ← 两者都有，但策略完全
 
 ---
 
-## 四、具体看你们项目中的 ToolCallAdvisor
+## 六、具体看你们项目中的 ToolCallAdvisor
 
-### 4.1 配置方式
+### 6.1 配置方式
 
 ```java
 // AgentConfig.java
@@ -242,7 +658,7 @@ public ToolCallAdvisor toolCallAdvisor() {
 }
 ```
 
-### 4.2 使用方式（CustomerServiceAgent）
+### 6.2 使用方式（CustomerServiceAgent）
 
 ```java
 // CustomerServiceAgent.java
@@ -267,7 +683,7 @@ ChatClient.ChatClientRequestSpec buildRequestWithoutRAG(final AgentContext conte
 
 这个过程**只涉及 1-2 轮 LLM 调用**，且完全封装在 `.call()` 的一次阻塞调用内。
 
-### 4.3 Advisor 链中的位置
+### 6.3 Advisor 链中的位置
 
 ```
 Advisor 链执行顺序（order 升序 = 从外到内）：
@@ -286,9 +702,9 @@ ToolCallAdvisor 位于**最外层**，意味着：
 
 ---
 
-## 五、对 AI Agent 系统架构选型的影响
+## 七、对 AI Agent 系统架构选型的影响
 
-### 5.1 当前架构适合什么
+### 7.1 当前架构适合什么
 
 你们当前的 `AgentOrchestrator` 是**单次调用**模式：
 
@@ -308,7 +724,7 @@ public AgentResponse process(AgentRequest request) {
 | **检索生成型** | 用户提问 → RAG 检索知识 → LLM 生成回答 | ContentAgent（生成营销文案） |
 | **简单操作型** | 用户请求 → 调用 1-2 个工具 → 返回结果 | ProductSearchAgent（搜索商品） |
 
-### 5.2 什么时候需要自建 ReAct 外层循环
+### 7.2 什么时候需要自建 ReAct 外层循环
 
 当遇到以下场景时，**需要在 Agent 内部或 Orchestrator 层增加显式的 ReAct 外层循环**，ToolCallAdvisor 不够：
 
@@ -320,7 +736,7 @@ public AgentResponse process(AgentRequest request) {
 | **环境状态依赖** | 需要根据外部系统状态变化调整策略 | 每轮重新观察环境状态 |
 | **用户交互穿插** | 执行中需要向用户确认关键操作 | 支持中断/暂停/恢复的 Agent 状态机 |
 
-### 5.3 如果未来需要 ReAct 外层循环的实现思路
+### 7.3 如果未来需要 ReAct 外层循环的实现思路
 
 ```java
 /**
@@ -391,7 +807,7 @@ public class LongHorizonAgent implements Agent {
 
 ---
 
-## 六、总结
+## 八、总结
 
 | 问题 | 答案 |
 |---|---|

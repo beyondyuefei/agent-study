@@ -91,9 +91,401 @@ SOP 层 (.md)                    Runtime 层 (Java)              Governance 层 
 
 ---
 
-## 一、业界 Skill 学习优化迭代概览
+## 一、领域模型
 
-### 1.1 什么是 Skill（三层视角）
+> 本节从领域驱动设计（DDD）视角，建立 Skill 全生命周期涉及的核心模型、关联关系与核心字段，为后续 Runtime 实现与 Governance 治理提供统一语言（Ubiquitous Language）。
+
+### 1.1 核心模型一览
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Skill 全生命周期领域模型                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   ┌─────────────────────────────────────────────────────────────────────┐  │
+│   │                        SkillRegistry                               │  │
+│   │                      (Skill 注册中心)                               │  │
+│   │                                                                    │  │
+│   │   ┌──────────┐  1:N  ┌──────────┐  1:1  ┌──────────┐             │  │
+│   │   │  Skill   │◄─────│SkillVersion│◄────│PromptTemplate│          │  │
+│   │   │ (技能根) │       │ (版本)    │       │(Prompt模板)│          │  │
+│   │   └────┬─────┘       └──────────┘       └──────────┘             │  │
+│   │        │                                                          │  │
+│   │        │ 1:1              1:1              1:1                    │  │
+│   │        ▼                 ▼                 ▼                      │  │
+│   │   ┌──────────┐      ┌──────────┐      ┌──────────┐               │  │
+│   │   │ SkillSOP │      │SkillRuntime│     │SkillGovernance│          │  │
+│   │   │ (SOP层)  │      │(运行时层)  │      │  (治理层)    │          │  │
+│   │   └──────────┘      └────┬─────┘      └────┬─────┘               │  │
+│   │                          │                 │                      │  │
+│   │                          │ 1:N             │ 1:N                  │  │
+│   │                          ▼                 ▼                      │  │
+│   │                    ┌──────────┐      ┌──────────┐                │  │
+│   │                    │ToolDefinition│  │ Deployment │               │  │
+│   │                    │(工具定义)  │      │  (部署记录) │               │  │
+│   │                    └────┬─────┘      └──────────┘                │  │
+│   │                         │                                         │  │
+│   │                         │ 1:N                                     │  │
+│   │                         ▼                                         │  │
+│   │                   ┌──────────┐                                    │  │
+│   │                   │ EvalSuite │                                   │  │
+│   │                   │(评估套件) │                                   │  │
+│   │                   └────┬─────┘                                    │  │
+│   │                        │                                          │  │
+│   │                        │ 1:N                                      │  │
+│   │                        ▼                                          │  │
+│   │                  ┌──────────┐     1:N    ┌──────────┐            │  │
+│   │                  │ EvalCase │◄───────────│EvalResult│            │  │
+│   │                  │(评估用例)│             │(评估结果)│            │  │
+│   │                  └──────────┘             └──────────┘            │  │
+│   └─────────────────────────────────────────────────────────────────────┘  │
+│                                    ▲                                      │
+│                                    │ 1:N                                   │
+│                              ┌──────────┐                                 │
+│                              │ Feedback │                                 │
+│                              │ (反馈)   │                                 │
+│                              └──────────┘                                 │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 1.2 模型关联关系
+
+| 关联双方 | 关系类型 | 说明 |
+|---|---|---|
+| `SkillRegistry` → `Skill` | **1:N** | 注册中心管理多个 Skill，提供统一发现与路由能力 |
+| `Skill` → `SkillSOP` | **1:1** | 每个 Skill 对应一份 SOP 手册，描述"应该怎么做" |
+| `Skill` → `SkillRuntime` | **1:1** | 每个 Skill 对应一份运行时实现，描述"怎么跑起来" |
+| `Skill` → `SkillGovernance` | **1:1** | 每个 Skill 对应一套治理配置，描述"跑得好不好" |
+| `Skill` → `SkillVersion` | **1:N** | 一个 Skill 可存在多个不可变版本，支持回滚与 A/B Test |
+| `SkillVersion` → `PromptTemplate` | **1:1** | 每个版本绑定一个 Prompt 模板，与代码分离存储 |
+| `SkillRuntime` → `ToolDefinition` | **1:N** | 运行时依赖多个工具定义（对应 `@Tool` 方法集合） |
+| `SkillRuntime` → `EvalSuite` | **1:N** | 一个 Skill Runtime 可配套多组 EvalSuite（单元/集成） |
+| `EvalSuite` → `EvalCase` | **1:N** | 评估套件由多条测试用例组成 |
+| `EvalCase` → `EvalResult` | **1:N** | 同一用例在不同版本/时间执行产生多条结果记录 |
+| `Skill` → `Feedback` | **1:N** | 一个 Skill 可收集多条隐式或显式反馈 |
+| `SkillGovernance` → `Deployment` | **1:N** | 治理层记录每次部署/灰度/回滚操作 |
+
+### 1.3 核心模型字段
+
+#### Skill（技能根实体）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `skillId` | String | Skill 唯一标识，如 `product-search` / `price-comparison` |
+| `skillName` | String | 可读名称，如"商品自动比价" |
+| `domain` | String | 所属业务域，如 `ECOMMERCE` / `CUSTOMER_SERVICE` |
+| `owner` | String | 负责人（工号或邮箱） |
+| `status` | Enum | 生命周期状态：`DRAFT` / `ACTIVE` / `DEPRECATED` / `ARCHIVED` |
+| `currentVersion` | String | 当前生效版本号 |
+| `createdAt` | Instant | 创建时间 |
+| `updatedAt` | Instant | 最后更新时间 |
+
+#### SkillSOP（规范/沉淀层）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `sopId` | String | SOP 文档 ID |
+| `skillId` | String | 关联 Skill |
+| `documentPath` | String | Markdown 文件路径，如 `.claude/skills/xxx/SKILL.md` |
+| `scoringDimensions` | List&lt;String&gt; | 评分维度（如六维评分模型的维度定义） |
+| `platformStrategies` | Map | 平台矩阵与反爬策略（Key: 平台名, Value: 策略配置） |
+| `iterationRoadmap` | List&lt;String&gt; | 迭代路线图中记录的待优化项 |
+| `boundaryCases` | List&lt;String&gt; | 已识别的边界 case 清单 |
+| `version` | String | SOP 文档版本，与 SkillVersion 独立演进 |
+
+#### SkillRuntime（运行时层）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `runtimeId` | String | Runtime 实例标识 |
+| `skillId` | String | 关联 Skill |
+| `implClass` | String | 实现类全限定名，如 `com.xxx.agent.skill.ProductSearchSkill` |
+| `chatClientConfig` | Map | ChatClient 配置（temperature、model、maxTokens 等） |
+| `toolBeans` | List&lt;String&gt; | 注册的 Tool Bean 名称列表 |
+| `advisorChain` | List&lt;AdvisorConfig&gt; | Advisor 链配置（含 order、参数） |
+| `contextEngineering` | ContextConfig | 上下文工程配置（历史长度、压缩策略、RAG 注入方式） |
+| `maxIterations` | int | ReAct 最大循环步数 |
+| `timeoutMs` | long | 单次调用超时 |
+
+#### SkillGovernance（治理层）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `governanceId` | String | 治理配置 ID |
+| `skillId` | String | 关联 Skill |
+| `evalTrigger` | Enum | Eval 触发策略：`ON_DEPLOY` / `SCHEDULED` / `MANUAL` |
+| `successRateThreshold` | double | 成功率告警阈值（如 0.85） |
+| `latencyThresholdMs` | long | 延迟告警阈值（如 3000ms） |
+| `feedbackCollection` | boolean | 是否收集用户显式反馈（👍/👎） |
+| `alertChannels` | List&lt;String&gt; | 告警通道（钉钉/邮件/企业微信） |
+
+#### SkillVersion（版本）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `versionId` | String | 版本号，遵循 SemVer，如 `1.2.3` |
+| `skillId` | String | 关联 Skill |
+| `promptTemplateId` | String | 绑定的 PromptTemplate ID |
+| `runtimeConfig` | Map&lt;String, Object&gt; | 运行时参数覆盖（与基线合并） |
+| `status` | Enum | 版本状态：`INACTIVE` / `GRAYSCALE` / `ACTIVE` / `DEPRECATED` |
+| `grayscalePercent` | int | 灰度百分比（0-100） |
+| `activatedAt` | Instant | 激活时间 |
+| `createdBy` | String | 版本创建人 |
+
+#### PromptTemplate（Prompt 模板）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `templateId` | String | 模板唯一 ID |
+| `skillId` | String | 关联 Skill |
+| `templateType` | Enum | 类型：`SYSTEM` / `USER` / `TOOL_DESCRIPTION` / `FEW_SHOT` |
+| `content` | String | 模板内容（支持占位符如 `{{userQuery}}`） |
+| `variables` | List&lt;String&gt; | 模板变量列表 |
+| `version` | String | 模板自身版本 |
+
+#### ToolDefinition（工具定义）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `toolName` | String | 工具名称，全局唯一 |
+| `skillId` | String | 所属 Skill |
+| `description` | String | 工具描述（**决定模型 tool choice 质量的关键字段**） |
+| `parameterSchema` | JSON Schema | 参数 JSON Schema |
+| `returnType` | String | 返回值类型全限定名 |
+| `targetBeanClass` | String | 目标 Bean 类名 |
+| `targetMethod` | String | 目标方法名 |
+| `timeoutMs` | long | 执行超时 |
+| `retryPolicy` | RetryConfig | 重试策略（次数、退避算法） |
+
+#### EvalSuite（评估套件）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `suiteId` | String | 套件 ID |
+| `skillId` | String | 关联 Skill |
+| `suiteName` | String | 套件名称，如 `ProductSearch_IntentRecognition` |
+| `evalType` | Enum | 类型：`UNIT`（单元） / `INTEGRATION`（集成） / `E2E`（端到端） |
+| `cases` | List&lt;EvalCase&gt; | 用例列表 |
+| `evaluatorClass` | String | 评估器实现类 |
+
+#### EvalCase（评估用例）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `caseId` | String | 用例唯一 ID |
+| `suiteId` | String | 所属套件 |
+| `description` | String | 用例描述，如 "Colorway 黑话理解 - bred" |
+| `input` | Object | 输入数据（类型由 Skill 决定） |
+| `expected` | Object | 期望输出 |
+| `difficulty` | Enum | 难度：`EASY` / `MEDIUM` / `HARD` |
+| `category` | String | 类别标签，如 `colorway` / `brand_alias` / `edge_case` |
+| `metadata` | Map | 扩展元数据 |
+
+#### EvalResult（评估结果）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `resultId` | String | 结果 ID |
+| `caseId` | String | 关联用例 |
+| `skillVersion` | String | 被测 Skill 版本 |
+| `passed` | boolean | 是否通过 |
+| `score` | double | 得分（0.0 - 1.0） |
+| `actualOutput` | String | 实际输出 |
+| `failureReason` | String | 失败原因 |
+| `executedAt` | Instant | 执行时间 |
+
+#### Feedback（反馈）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `feedbackId` | String | 反馈 ID |
+| `skillId` | String | 关联 Skill |
+| `sessionId` | String | 关联会话 |
+| `feedbackType` | Enum | 类型：`IMPLICIT`（隐式） / `EXPLICIT`（显式） |
+| `channel` | Enum | 通道：`THUMB`（👍/👎） / `BAD_CASE`（标注） / `AUTO_METRIC`（自动指标） |
+| `content` | String | 反馈内容 |
+| `score` | Integer | 评分（如 1-5 星，或 👍=1 / 👎=-1） |
+| `createdAt` | Instant | 反馈时间 |
+
+#### Deployment（部署记录）
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `deploymentId` | String | 部署 ID |
+| `skillId` | String | 关联 Skill |
+| `version` | String | 部署版本 |
+| `action` | Enum | 操作：`DEPLOY` / `GRAYSCALE` / `ROLLBACK` / `DEPRECATE` |
+| `operator` | String | 操作人 |
+| `previousVersion` | String | 回滚前的上一个版本 |
+| `executedAt` | Instant | 操作时间 |
+
+### 1.4 三层映射关系速查
+
+| 概念/操作 | SOP 层 | Runtime 层 | Governance 层 |
+|---|---|---|---|
+| **做什么** | 写 `.md` 手册 | 写 Java 代码 + Prompt | 配置后台 + 看板 |
+| **核心模型** | `SkillSOP` | `SkillRuntime` + `ToolDefinition` | `SkillGovernance` + `Deployment` |
+| **版本管理** | SOP 文档版本 | SkillVersion + PromptTemplate | 灰度/全量/回滚策略 |
+| **质量验证** | 人工 Review 手册 | EvalSuite + EvalCase | 成功率/延迟/ROI 看板 |
+| **反馈入口** | 更新迭代路线图 | 修复代码 + 调优 Prompt | 收集并分析用户反馈 |
+
+---
+
+## 二、设计模型
+
+> 本节将「领域模型」中的抽象概念映射到本项目代码中的具体类与包，明确哪些模型已有代码实现、哪些还停留在文档/SOP 层。便于读者按图索骥直接阅读源码。
+
+### 2.1 实现状态总览
+
+```
+领域模型                实现状态            代码位置（如有）
+─────────────────────────────────────────────────────────────────
+Skill                    ❌ 未实现         仅存在于本文概念层
+SkillSOP                 ⚠️ 半实现         本文档自身即为 SOP 层产物
+SkillRuntime             ✅ 已实现         production/ 包下全量代码
+SkillGovernance          ❌ 未实现         本文档 4.3 节为伪代码示例
+SkillVersion             ❌ 未实现         本文档 4.3 节为伪代码示例
+PromptTemplate           ⚠️ 半实现         PromptTemplateCache（仅缓存层）
+ToolDefinition           ✅ 已实现         production.tool.Tool + ToolRegistry
+EvalSuite                ❌ 未实现         本文档 4.1 节为伪代码示例
+EvalCase                 ❌ 未实现         同上
+EvalResult               ❌ 未实现         同上
+Feedback                 ❌ 未实现         概念层
+Deployment               ❌ 未实现         本文档 4.3 节为伪代码示例
+SkillRegistry            ❌ 未实现         概念层
+```
+
+> **说明**：本项目当前重点建设的是 **Skill Runtime 层**，SOP 层以 Markdown 文档形式存在（即本文及 `docs/` 目录下的 `.md` 文件），Governance 层（版本管理、Eval 框架、灰度发布）尚未进入编码阶段，仅以设计文档和伪代码形式存在。
+
+### 2.2 Skill Runtime 层 → 代码类映射表
+
+| 领域模型 | 代码类（完整路径） | 所在包 | 说明 |
+|---|---|---|---|
+| `SkillRuntime` | `com.kuoge.agentstudy.production.runtime.core.ConversationRuntime` | runtime | 核心对话运行时，对应 Skill 的「可执行程序」 |
+| `SkillRuntime` | `com.kuoge.agentstudy.production.agent.ProductionReActAgent` | agent | Agent 入口 facade，封装 Runtime 的调用 |
+| `ToolDefinition` | `com.kuoge.agentstudy.production.tool.Tool` (interface) | tool | 工具定义接口（name / description / execute） |
+| `ToolDefinition` | `com.kuoge.agentstudy.production.tool.ToolRegistry` | tool | 工具注册中心（管理 Tool 集合） |
+| `ToolDefinition` | `com.kuoge.agentstudy.production.tool.ToolExecutor` | tool | 工具执行器（调用 Action → 执行 Tool） |
+| `ReActLoop` | `com.kuoge.agentstudy.production.runtime.core.ConversationRuntime.runTurn()` | runtime | ReAct 外循环的工程化实现 |
+| `LoopStep` | `com.kuoge.agentstudy.production.model.ReActStep` (record) | model | 单步记录（thought + action + observation） |
+| `Action` | `com.kuoge.agentstudy.production.model.Action` (record) | model | 工具调用动作 |
+| `Observation` | `com.kuoge.agentstudy.production.model.Observation` (record) | model | 观察结果 |
+| `AgentSession` | `com.kuoge.agentstudy.production.runtime.session.AgentSession` | session | 会话管理（消息历史 + 压缩记录 + Fork） |
+| `Message` | `com.kuoge.agentstudy.production.runtime.session.ConversationMessage` | session | 结构化消息（多 block + token 用量） |
+| `Message` | `com.kuoge.agentstudy.production.runtime.session.ContentBlock` (sealed interface) | session | 内容块：Text / Thinking / ToolUse / ToolResult |
+| `Message` | `com.kuoge.agentstudy.production.runtime.session.MessageRole` (enum) | session | SYSTEM / USER / ASSISTANT / TOOL |
+| `LlmClient` | `com.kuoge.agentstudy.production.runtime.client.LlmClient` (interface) | client | LLM 客户端抽象 |
+| `LlmResponse` | `com.kuoge.agentstudy.production.runtime.client.LlmResponse` (record) | client | LLM 结构化响应（blocks + usage） |
+| `TokenUsage` | `com.kuoge.agentstudy.production.runtime.usage.TokenUsage` (record) | usage | Token 用量（input / output / cache） |
+| `UsageTracker` | `com.kuoge.agentstudy.production.runtime.usage.UsageTracker` | usage | 会话级用量累积 |
+| `TurnSummary` | `com.kuoge.agentstudy.production.runtime.core.TurnSummary` (record) | runtime | 单次 Turn 执行摘要 |
+| `RuntimeConfig` | `com.kuoge.agentstudy.production.runtime.core.RuntimeConfig` (record) | runtime | 运行时配置（循环上限 / 压缩 / 权限） |
+| `ContextEngineering` | `com.kuoge.agentstudy.production.context.ContextCompressor` | context | 9段式上下文压缩器 |
+| `ContextEngineering` | `com.kuoge.agentstudy.production.context.ContextSegment` | context | 上下文段（内容 + 策略 + token 数） |
+| `ContextEngineering` | `com.kuoge.agentstudy.production.context.SegmentType` (enum) | context | 9 种段类型（SYSTEM_IDENTITY ... SCRATCHPAD） |
+| `SessionCompactor` | `com.kuoge.agentstudy.production.runtime.compact.SessionCompactor` | compact | 会话自动压缩器（摘要 + 边界保护） |
+| `CompactionConfig` | `com.kuoge.agentstudy.production.runtime.compact.CompactionConfig` (record) | compact | 压缩配置 |
+| `CompactionResult` | `com.kuoge.agentstudy.production.runtime.compact.CompactionResult` (record) | compact | 压缩结果 |
+| `PermissionPolicy` | `com.kuoge.agentstudy.production.runtime.permission.PermissionPolicy` | permission | 权限策略引擎（allow / deny / ask 规则） |
+| `PermissionMode` | `com.kuoge.agentstudy.production.runtime.permission.PermissionMode` (enum) | permission | 权限模式枚举 |
+| `PermissionOutcome` | `com.kuoge.agentstudy.production.runtime.permission.PermissionOutcome` (sealed) | permission | 权限结果：Allow / Deny / Ask |
+| `ToolHook` | `com.kuoge.agentstudy.production.runtime.hook.ToolHook` (interface) | hook | 工具钩子（pre / post / failure） |
+| `HookResult` | `com.kuoge.agentstudy.production.runtime.hook.HookResult` (record) | hook | 钩子执行结果 |
+| `PreferenceMemory` | `com.kuoge.agentstudy.production.memory.PreferenceMemory` | memory | 偏好记忆系统（Core + Archival） |
+| `UserPreference` | `com.kuoge.agentstudy.production.memory.UserPreference` (record) | memory | 用户偏好条目（confidence / freshnessScore） |
+| `CostTracker` | `com.kuoge.agentstudy.production.cost.CostTracker` | cost | 成本追踪器 |
+| `TokenBudget` | `com.kuoge.agentstudy.production.cost.TokenBudget` | cost | Token 预算管理 |
+| `PromptTemplate` | `com.kuoge.agentstudy.production.cost.PromptTemplateCache` | cost | Prompt 模板缓存（治理层完整实现待建设） |
+
+### 2.3 三层架构的代码映射
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Skill 三层架构 → 代码映射                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  SOP 层（规范/沉淀层）                                                       │
+│  ─────────────────────                                                       │
+│  产物：docs/*.md  +  .claude/skills/*/SKILL.md（如有）                       │
+│  对应本文：第 一、二、三、四 章均为 SOP 层知识资产                             │
+│                                                                             │
+│                                    ↓ 指导实现                                │
+│                                                                             │
+│  Runtime 层（可执行层）  ←── 本项目已全量实现                                  │
+│  ─────────────────────                                                       │
+│  核心包：com.kuoge.agentstudy.production.*                                   │
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  runtime/core/          → ConversationRuntime + RuntimeConfig       │   │
+│  │  runtime/session/       → AgentSession + ConversationMessage        │   │
+│  │  runtime/client/        → LlmClient + LlmResponse                   │   │
+│  │  runtime/usage/         → TokenUsage + UsageTracker                 │   │
+│  │  runtime/compact/       → SessionCompactor + CompactionResult       │   │
+│  │  runtime/hook/          → ToolHook + HookResult                     │   │
+│  │  runtime/permission/    → PermissionPolicy + PermissionOutcome      │   │
+│  │  context/               → ContextCompressor + ContextSegment        │   │
+│  │  memory/                → PreferenceMemory + UserPreference         │   │
+│  │  cost/                  → CostTracker + TokenBudget                 │   │
+│  │  tool/                  → Tool + ToolRegistry + ToolExecutor        │   │
+│  │  agent/                 → ProductionReActAgent + AgentLlmClient     │   │
+│  │  model/                 → ReActStep + Action + Observation          │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│                                    ↓ 被管理 / 被观测                         │
+│                                                                             │
+│  Governance 层（治理层）  ←── 尚未编码，仅设计文档                             │
+│  ─────────────────────                                                       │
+│  产物：本文档 4.3 节「版本管理与 A-B 测试」中的伪代码                           │
+│        + 第 五 章「对 AI Agent 系统的具体借鉴建议」                            │
+│                                                                             │
+│  待建设模块：                                                                │
+│  • SkillRegistry —— 注册表 + 版本历史 + 依赖图谱                              │
+│  • EvalRunner —— 自动化执行 EvalSuite，生成回归报告                           │
+│  • Prompt Studio —— 在线编辑 Prompt + 实时预览 + 版本对比                     │
+│  • Feedback Inbox —— 聚合隐式/显式反馈                                       │
+│  • Deployment Manager —— 灰度/全量/回滚 + 配置中心联动                         │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 2.4 领域模型 vs 设计模型对照速查
+
+| 领域模型（概念） | 设计模型（代码类） | 实现状态 | 备注 |
+|---|---|---|---|
+| `Skill` | 无对应单类 | ❌ | 当前以 Agent 粒度组织，Skill 作为逻辑概念存在 |
+| `SkillSOP` | `docs/skill-learning-and-iteration-best-practices.md` | ⚠️ | 本文档即为 SOP 层产物 |
+| `SkillRuntime` | `ConversationRuntime` + `ProductionReActAgent` | ✅ | 核心已全量实现 |
+| `SkillGovernance` | 无 | ❌ | 待建设，当前只有设计思路 |
+| `SkillVersion` | 无 | ❌ | 待建设，当前 Prompt 外置到 `PromptTemplateCache` |
+| `PromptTemplate` | `PromptTemplateCache` | ⚠️ | 仅缓存层，无版本管理和在线编辑 |
+| `ToolDefinition` | `Tool` (interface) + `ToolRegistry` | ✅ | 运行时工具定义完整实现 |
+| `EvalSuite` | 无 | ❌ | 4.1 节为伪代码，未进入编码 |
+| `EvalCase` | 无 | ❌ | 同上 |
+| `EvalResult` | 无 | ❌ | 同上 |
+| `Feedback` | 无 | ❌ | 待建设 |
+| `Deployment` | 无 | ❌ | 4.3 节为伪代码，未进入编码 |
+| `SkillRegistry` | 无 | ❌ | 待建设 |
+
+### 2.5 代码阅读路径建议
+
+| 你想了解什么 | 从哪个包开始 | 核心类 |
+|---|---|---|
+| **ReAct 循环的最简实现** | `tutorial/` | `ReActLoop.java`（60 行核心逻辑） |
+| **生产级对话运行时** | `production.runtime.core/` | `ConversationRuntime.runTurn()` |
+| **结构化消息模型** | `production.runtime.session/` | `ConversationMessage` + `ContentBlock` |
+| **上下文工程实践** | `production.context/` | `ContextCompressor`（9段式压缩） |
+| **权限控制设计** | `production.runtime.permission/` | `PermissionPolicy.authorize()` |
+| **工具调用链** | `production.tool/` | `Tool` → `ToolRegistry` → `ToolExecutor` |
+| **成本与预算** | `production.cost/` | `CostTracker` + `TokenBudget` |
+| **记忆系统** | `production.memory/` | `PreferenceMemory` + `UserPreference` |
+| **会话压缩** | `production.runtime.compact/` | `SessionCompactor` + `CompactionConfig` |
+
+---
+
+## 三、业界 Skill 学习优化迭代概览
+
+### 3.1 什么是 Skill（三层视角）
 
 在你们的项目语境下，**一个完整的 Skill = SOP 手册 + Runtime 实现 + Governance 配置**。
 
@@ -110,7 +502,7 @@ SOP 层 (.md)                    Runtime 层 (Java)              Governance 层 
 - Runtime 跑得稳 ≠ Governance 能迭代（没有 Eval 数据，不知道好不好）
 - 三者缺一不可，且必须形成联动闭环
 
-### 1.2 业界核心方法论
+### 3.2 业界核心方法论
 
 | 方法论 | 代表厂商/项目 | 核心思想 | 对 Skill 迭代的意义 |
 |---|---|---|---|
@@ -120,7 +512,7 @@ SOP 层 (.md)                    Runtime 层 (Java)              Governance 层 
 | **Context Engineering** | Anthropic | 比 Prompt Engineering 更进一步，关注整个上下文窗口的结构化组织 | Skill Runtime 的输入输出格式、历史消息、工具结果的组织方式直接影响效果 |
 | **DSPy** | Stanford | 用编程框架替代手写 Prompt，自动优化 Prompt 和权重 | 为 Skill Runtime 的 Prompt 自动化调优提供理论框架 |
 
-### 1.3 为什么选 Claude（Anthropic）作为深度案例
+### 3.3 为什么选 Claude（Anthropic）作为深度案例
 
 Anthropic 在 Agentic 系统设计上具有业界标杆地位：
 
@@ -132,9 +524,9 @@ Anthropic 在 Agentic 系统设计上具有业界标杆地位：
 
 ---
 
-## 二、Claude Skill Runtime 架构深度解析【Runtime 层】
+## 四、Claude Skill Runtime 架构深度解析【Runtime 层】
 
-### 2.1 设计哲学：从「Prompt Engineering」到「Context Engineering」
+### 4.1 设计哲学：从「Prompt Engineering」到「Context Engineering」
 
 Anthropic 的核心观点是：**Prompt Engineering 已经不够了，你需要的是 Context Engineering**。
 
@@ -149,7 +541,7 @@ Anthropic 的核心观点是：**Prompt Engineering 已经不够了，你需要�
 - 一个 Skill Runtime 的效果，80% 取决于「上下文如何组织」，而非「Prompt 写得多么华丽」
 - 工具定义（Tool Definition）的 schema 设计、描述文案的精确性，比 system prompt 的文采更重要
 
-### 2.2 核心架构：三层模型
+### 4.2 核心架构：三层模型
 
 Claude 的 **Agent Runtime 系统**（即 Skill 的运行时实现层）采用**「输入层 → 推理层 → 执行层」**的三层架构：
 
@@ -202,7 +594,7 @@ Claude 的 **Agent Runtime 系统**（即 Skill 的运行时实现层）采用**
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.3 核心执行模型：ReAct Loop 的工程化实现
+### 4.3 核心执行模型：ReAct Loop 的工程化实现
 
 Claude 的 **Agent 执行流程**采用**增强版 ReAct 循环**。与学术版 ReAct 不同，工程化实现强调**结构化、可中断、可观测**。
 
@@ -276,7 +668,7 @@ Claude 的 **Agent 执行流程**采用**增强版 ReAct 循环**。与学术版
 
 ---
 
-## 三、典型案例深度拆解
+## 五、典型案例深度拆解
 
 ### 案例 1：Web Search Skill（信息检索型）
 
@@ -724,9 +1116,9 @@ class ScreenCapture {
 
 ---
 
-## 四、Skill 迭代优化方法论【跨三层】
+## 六、Skill 迭代优化方法论【跨三层】
 
-### 4.1 Eval-Driven Development（评估驱动开发）
+### 6.1 Eval-Driven Development（评估驱动开发）
 
 Anthropic 内部的核心方法论：**Skill Runtime 的每次迭代都必须由 Evals 数据集驱动，而非主观感觉**。
 
@@ -1018,7 +1410,7 @@ public class ProductSearchEvalSuite {
 }
 ```
 
-### 4.2 反馈闭环：隐式 vs 显式
+### 6.2 反馈闭环：隐式 vs 显式
 
 Skill Runtime 的迭代优化依赖**双通道反馈**：
 
@@ -1056,7 +1448,7 @@ Skill Runtime 的迭代优化依赖**双通道反馈**：
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 4.3 版本管理与 A-B 测试
+### 6.3 版本管理与 A-B 测试
 
 Skill Runtime 的版本管理遵循**「不可变部署」**原则（由 Governance 层执行）：
 
@@ -1168,7 +1560,7 @@ public class SkillVersionManager {
 }
 ```
 
-### 4.4 Anthropic 总结的 Agent Runtime 设计原则
+### 6.4 Anthropic 总结的 Agent Runtime 设计原则
 
 基于 Anthropic 「Building effective agents」博客和内部实践，以下是 Claude **Agent Runtime** 设计的核心原则（供 Skill Runtime 层参考）：
 
@@ -1212,9 +1604,9 @@ public class SkillVersionManager {
 
 ---
 
-## 五、对 AI Agent 系统 的具体借鉴建议【三层映射】
+## 七、对 AI Agent 系统 的具体借鉴建议【三层映射】
 
-### 5.1 架构层面
+### 7.1 架构层面
 
 | Claude 实践 | AI Agent 系统 现状 | 建议改进 |
 |---|---|---|
@@ -1223,7 +1615,7 @@ public class SkillVersionManager {
 | 多模态输入 | 视觉搜索 Agent 已规划 | 复用 Computer Use 的截图 → base64 → 模型理解模式 |
 | 沙箱执行 | 价格抓取已用隔离环境 | 所有外部调用 Skill 统一接入沙箱执行框架 |
 
-### 5.2 迭代优化层面
+### 7.2 迭代优化层面
 
 | Claude 实践 | AI Agent 系统 现状 | 建议改进 |
 |---|---|---|
@@ -1232,7 +1624,7 @@ public class SkillVersionManager {
 | 版本不可变部署 | Prompt 可能硬编码在代码中 | 全部 Prompt 外置到 skill-admin 配置中心 |
 | 灰度发布 | 无 | skill-admin A/B Test 模块第一版应支持流量分桶 |
 
-### 5.3 与 skill-admin-backend 的联动
+### 7.3 与 skill-admin-backend 的联动
 
 基于 Claude 的治理经验，skill-admin-backend 应重点建设以下能力：
 
@@ -1244,7 +1636,7 @@ public class SkillVersionManager {
 
 ---
 
-## 六、参考资源
+## 八、参考资源
 
 | 资源 | 类型 | 链接 |
 |---|---|---|
