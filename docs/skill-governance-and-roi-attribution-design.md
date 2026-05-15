@@ -1,6 +1,6 @@
 # Skill 治理与 ROI 归因：三系统联动设计方案
 
-> **目标**：围绕「Skill 沉淀迭代/训练/优化」和「Skill 自然流量增长收益衡量」两大核心目标，明确 **psylos-agent**、**psylos1-skill-admin-backend**、**跨境电商业务中台** 三系统的职责边界、联动机制与数据闭环，并识别必须补充的扩展系统。
+> **目标**：围绕「Skill 沉淀迭代/训练/优化」和「Skill 自然流量增长收益衡量」两大核心目标，明确 **AI Agent 系统**、**skill-admin-backend**、**业务中台** 三系统的职责边界、联动机制与数据闭环，并识别必须补充的扩展系统。
 >
 > **范围**：架构设计、交互协议、数据流、闭环机制、扩展系统必要性分析。
 
@@ -12,9 +12,9 @@
 
 | 系统 | 现状 | 职责 |
 |---|---|---|
-| **psylos-agent** | 已 MVP 运行，包含 ProductSearch、PriceCompare 等多个 Agent | AI Skill **执行引擎**，直接面向用户和业务场景产生价值 |
-| **psylos1-skill-admin-backend** | 新建系统 | Skill **治理中枢**，负责 Skill 全生命周期管理、效果评估、迭代训练 |
-| **跨境电商业务中台** | 已有成熟业务系统 | **业务底座**，提供商品、订单、用户、流量、SEO 等核心数据与埋点能力 |
+| **AI Agent 系统** | 已 MVP 运行，包含 ProductSearch、PriceCompare 等多个 Agent | AI Skill **执行引擎**，直接面向用户和业务场景产生价值 |
+| **skill-admin-backend** | 新建系统 | Skill **治理中枢**，负责 Skill 全生命周期管理、效果评估、迭代训练 |
+| **业务中台** | 已有成熟业务系统 | **业务底座**，提供商品、订单、用户、流量、SEO 等核心数据与埋点能力 |
 
 ### 1.2 两大核心目标
 
@@ -41,7 +41,7 @@
 
 单靠任何一方都无法同时实现两个目标：
 
-- **只有 psylos-agent**：Skill 会沦为「黑盒脚本」，执行了但不知道好不好，无法迭代。
+- **只有 AI Agent 系统**：Skill 会沦为「黑盒脚本」，执行了但不知道好不好，无法迭代。
 - **只有 skill-admin-backend**：没有真实执行数据和业务结果，治理变成「无米之炊」。
 - **只有业务中台**：没有 Skill 级别的执行标记和归因能力，无法区分「是自然流量自己涨的」还是「某个 Skill 驱动的」。
 
@@ -59,7 +59,7 @@
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌─────────────────────────────┐                                            │
-│  │   psylos1-skill-admin       │  ← Skill 治理层（ Governance Layer ）      │
+│  │   skill-admin       │  ← Skill 治理层（ Governance Layer ）      │
 │  │        -backend             │                                            │
 │  │  ├─ Skill 注册与元数据管理   │                                            │
 │  │  ├─ Prompt / 参数版本控制    │                                            │
@@ -71,7 +71,7 @@
 │                │ 下发 Skill 配置 / 接收执行报告                              │
 │                ▼                                                             │
 │  ┌─────────────────────────────┐                                            │
-│  │      psylos-agent           │  ← Skill 执行层（ Execution Layer ）       │
+│  │      AI Agent 系统           │  ← Skill 执行层（ Execution Layer ）       │
 │  │  ├─ AgentOrchestrator       │                                            │
 │  │  ├─ 13 个 Skill 运行时       │                                            │
 │  │  ├─ LLM Gateway / RAG       │                                            │
@@ -81,7 +81,7 @@
 │                │ 调用业务 API / 上报用户行为                                  │
 │                ▼                                                             │
 │  ┌─────────────────────────────┐                                            │
-│  │   跨境电商业务中台            │  ← 业务底座层（ Business Layer ）          │
+│  │   业务中台            │  ← 业务底座层（ Business Layer ）          │
 │  │  ├─ 商品 / 订单 / 库存 API   │                                            │
 │  │  ├─ 用户行为埋点（GA4/自研） │                                            │
 │  │  ├─ SEO 数据（GSC / SEMrush）│                                            │
@@ -94,7 +94,7 @@
 
 ### 2.2 各系统详细职责
 
-#### psylos-agent（Skill 执行引擎）
+#### AI Agent 系统（Skill 执行引擎）
 
 | 模块 | 职责 |
 |---|---|
@@ -104,7 +104,7 @@
 | **RAG Pipeline** | 为 Skill 提供领域知识检索（潮流知识库、商品知识库、SEO 内容库、客服知识库） |
 | **Trace & Event** | 每次 Skill 执行生成唯一 `traceId`，记录输入/输出/耗时/异常；通过 Event Bus 上报到 skill-admin |
 
-#### psylos1-skill-admin-backend（Skill 治理中枢）
+#### skill-admin-backend（Skill 治理中枢）
 
 | 模块 | 职责 |
 |---|---|
@@ -116,11 +116,11 @@
 | **A/B Test Manager** | 管理 Skill 版本的流量切分、实验周期、显著性检验、自动择优发布 |
 | **Feedback Loop** | 收集运营人员的显式反馈（ thumbs up/down ）和用户行为的隐式反馈（转化率、停留时长） |
 
-#### 跨境电商业务中台（业务底座）
+#### 业务中台（业务底座）
 
 | 模块 | 职责 |
 |---|---|
-| **Ecommerce API** | 商品详情、库存查询、订单创建、价格数据——供 psylos-agent Skill 调用 |
+| **Ecommerce API** | 商品详情、库存查询、订单创建、价格数据——供 AI Agent 系统 Skill 调用 |
 | **Behavior Tracking** | 全站用户行为埋点（页面浏览、点击、加购、下单、搜索 query），支持 `skill_trace_id` 透传 |
 | **SEO Data Hub** | 对接 Google Search Console API、SEMrush API，提供关键词排名、收录量、自然流量数据 |
 | **Attribution Core** | 多触点归因模型（首次触点 / 末次触点 / 线性归因 / Shapley Value），支持 Skill 级别归因 |
@@ -138,7 +138,7 @@
     ├─[1] 用户访问自建站（自然流量）──────────────┐
     │                                              │
     ▼                                              │
-psylos-agent                                       │
+AI Agent 系统                                       │
     │                                              │
     ├─[2] AgentOrchestrator 路由到对应 Skill       │
     │    注入：skillId, version, promptTemplate,   │
@@ -190,7 +190,7 @@ skill-admin-backend ◄───────────────────
 
 ### 3.2 核心接口契约
 
-#### A. skill-admin → psylos-agent：Skill 配置下发
+#### A. skill-admin → AI Agent 系统：Skill 配置下发
 
 ```java
 // Skill 配置响应（skill-admin 提供，agent 启动时/定时拉取）
@@ -205,7 +205,7 @@ public record SkillConfig(
 ) {}
 ```
 
-#### B. psylos-agent → skill-admin：执行事件上报
+#### B. AI Agent 系统 → skill-admin：执行事件上报
 
 ```java
 // 执行事件（每次 Skill 调用后异步上报）
@@ -255,7 +255,7 @@ public record SkillAttributionRecord(
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │   ┌──────────────┐                                                          │
-│   │  生产执行     │  psylos-agent 各 Skill 在真实流量中运行                   │
+│   │  生产执行     │  AI Agent 系统 各 Skill 在真实流量中运行                   │
 │   │  (Run)       │  → 产生执行日志、用户交互数据、业务结果                   │
 │   └──────┬───────┘                                                          │
 │          │ 执行事件 + 埋点数据                                               │
@@ -303,10 +303,10 @@ public record SkillAttributionRecord(
 
 | 机制 | 说明 | 负责系统 |
 |---|---|---|
-| **执行事件总线** | psylos-agent 每次 Skill 调用后，异步发送 `SkillExecutionEvent` 到 skill-admin（通过 Kafka/RabbitMQ），确保不影响主链路延迟 | psylos-agent + skill-admin |
-| **Prompt 版本管理** | skill-admin 维护每个 Skill 的 Prompt 历史版本，支持 diff 对比、一键回滚。发布时通过配置中心推送到 psylos-agent | skill-admin |
-| **RAG 知识库版本** | 知识库更新与 Skill 版本解耦。知识库独立迭代，Skill 可指定使用特定版本的知识库集合 | psylos-agent |
-| **A/B Test 框架** | skill-admin 定义灰度规则（用户分桶、流量比例），psylos-agent 从配置中心读取并执行。实验结果自动计算置信区间 | skill-admin |
+| **执行事件总线** | AI Agent 系统 每次 Skill 调用后，异步发送 `SkillExecutionEvent` 到 skill-admin（通过 Kafka/RabbitMQ），确保不影响主链路延迟 | AI Agent 系统 + skill-admin |
+| **Prompt 版本管理** | skill-admin 维护每个 Skill 的 Prompt 历史版本，支持 diff 对比、一键回滚。发布时通过配置中心推送到 AI Agent 系统 | skill-admin |
+| **RAG 知识库版本** | 知识库更新与 Skill 版本解耦。知识库独立迭代，Skill 可指定使用特定版本的知识库集合 | AI Agent 系统 |
+| **A/B Test 框架** | skill-admin 定义灰度规则（用户分桶、流量比例），AI Agent 系统 从配置中心读取并执行。实验结果自动计算置信区间 | skill-admin |
 | **反馈双通道** | ① 隐式反馈：用户行为（转化率、停留时长）；② 显式反馈：运营人员在 admin 后台对 Skill 输出打标（好评/差评/修改建议） | 业务中台 + skill-admin |
 
 ### 4.2 目标二：Skill 自然流量增长收益衡量闭环
@@ -327,7 +327,7 @@ public record SkillAttributionRecord(
 │                          ▼ 用户进入自建站                                    │
 │  Skill 执行层                                                               │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │  psylos-agent：用户旅程中触发多个 Skill                              │   │
+│  │  AI Agent 系统：用户旅程中触发多个 Skill                              │   │
 │  │                                                                     │   │
 │  │  例：用户从 Google 搜索 "8LOME hoodie styling" 进入                 │   │
 │  │       ↓                                                             │   │
@@ -393,7 +393,7 @@ public record SkillAttributionRecord(
 
 | 要点 | 实现方式 |
 |---|---|
-| **Trace 透传** | psylos-agent 在 HTTP Header / URL Param / Cookie 中透传 `skill_trace_id`，确保从 Skill 触点到下单全链路可追踪 |
+| **Trace 透传** | AI Agent 系统 在 HTTP Header / URL Param / Cookie 中透传 `skill_trace_id`，确保从 Skill 触点到下单全链路可追踪 |
 | **自然流量标记** | 中台在 GA4 或自研埋点中，将 `source=organic` 的访问与 `skill_trace_id` 关联，确保只计算自然流量带来的收益 |
 | **多 Skill 贡献** | 一个用户旅程可能触发多个 Skill，必须使用多触点归因模型（推荐 Shapley Value），避免简单归因导致低估/高估 |
 | **时间窗口** | 归因窗口设为 30 天（行业惯例），Skill 触发后 30 天内的转化计入该 Skill 收益 |
@@ -411,7 +411,7 @@ public record SkillAttributionRecord(
 
 RAG 不是「锦上添花」，而是 Skill 沉淀迭代的**核心数据载体**。在目标一的闭环中，「RAG 知识库更新」是 Skill 优化的四大手段之一（Prompt / RAG / 参数 / 模型）。
 
-当前 psylos-agent 的 RAG 基础设施（DashVector + DocumentIndexer / Retriever）已具备基础能力，但需要升级为**企业级 RAG 知识库平台**：
+当前 AI Agent 系统 的 RAG 基础设施（DashVector + DocumentIndexer / Retriever）已具备基础能力，但需要升级为**企业级 RAG 知识库平台**：
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -466,7 +466,7 @@ RAG 不是「锦上添花」，而是 Skill 沉淀迭代的**核心数据载体*
 
 当前业务中台的埋点和归因能力大概率是「平台级」的（区分渠道、广告计划），但缺乏「Skill 级」的归因粒度。建议由**业务中台扩展「Skill 归因模块」**：
 
-- 接收 psylos-agent 上报的 `skill_trace_id`
+- 接收 AI Agent 系统 上报的 `skill_trace_id`
 - 在现有归因模型基础上，增加 Skill 维度
 - 定时向 skill-admin 同步归因结果
 
@@ -519,7 +519,7 @@ Prompt 是 Skill 的核心资产之一，skill-admin 必须内置：
 │  [数据源]                    [流转方向]                  [消费方]           │
 │  ───────────────────────────────────────────────────────────────────────   │
 │                                                                             │
-│  商品/订单/库存/用户数据     中台 ──────API──────→   psylos-agent           │
+│  商品/订单/库存/用户数据     中台 ──────API──────→   AI Agent 系统           │
 │  （实时查询）                                                               │
 │                                                                             │
 │  用户行为埋点数据            中台 ──────ETL──────→   skill-admin            │
@@ -530,7 +530,7 @@ Prompt 是 Skill 的核心资产之一，skill-admin 必须内置：
 │  Skill 执行事件              agent ───Event Bus──→   skill-admin            │
 │  （traceId / 输入输出 / 成本）                                              │
 │                                                                             │
-│  Skill 配置（Prompt/参数）   admin ──配置中心──→     psylos-agent           │
+│  Skill 配置（Prompt/参数）   admin ──配置中心──→     AI Agent 系统           │
 │                                                                             │
 │  归因结果                    中台 ───定时同步──→     skill-admin            │
 │  （traceId → attributed_gmv）                                               │
@@ -638,9 +638,9 @@ public record KnowledgeCollection(
 | 任务 | 负责系统 | 说明 |
 |---|---|---|
 | Skill Registry 上线 | skill-admin | 注册已有 Agent 为 Skill，建立元数据 |
-| 执行事件上报链路 | psylos-agent → skill-admin | 每次 Skill 调用后异步上报 `SkillExecutionEvent` |
-| Prompt 外置化 | psylos-agent + skill-admin | 将硬编码 Prompt 提取到 skill-admin 配置中心，支持在线修改 |
-| traceId 全链路透传 | psylos-agent + 中台 | 在埋点和 API 调用中透传 `skill_trace_id` |
+| 执行事件上报链路 | AI Agent 系统 → skill-admin | 每次 Skill 调用后异步上报 `SkillExecutionEvent` |
+| Prompt 外置化 | AI Agent 系统 + skill-admin | 将硬编码 Prompt 提取到 skill-admin 配置中心，支持在线修改 |
+| traceId 全链路透传 | AI Agent 系统 + 中台 | 在埋点和 API 调用中透传 `skill_trace_id` |
 | 基础 ROI 看板 | skill-admin | 先采用「末次触点归因」，展示各 Skill 的 GMV 和 Token 成本 |
 
 **里程碑**：运营人员可以在 skill-admin 后台看到各 Skill 的执行量、成功率、基础 ROI。
@@ -666,7 +666,7 @@ public record KnowledgeCollection(
 | 任务 | 负责系统 | 说明 |
 |---|---|---|
 | 自动诊断 | skill-admin | 基于规则 + LLM，自动分析 Skill 效果下降原因并生成优化建议 |
-| 知识库自动更新 | psylos-agent + skill-admin | 商品上新/竞品变化/热点事件 → 自动触发知识库索引更新 |
+| 知识库自动更新 | AI Agent 系统 + skill-admin | 商品上新/竞品变化/热点事件 → 自动触发知识库索引更新 |
 | 自动参数调优 | skill-admin | 基于贝叶斯优化，自动搜索最优 temperature / topK / fusion weights |
 | Skill 组合优化 | skill-admin | 分析用户旅程中多 Skill 组合的效果，推荐最优编排策略 |
 | 预测性维护 | skill-admin | 预测 Skill 效果衰退趋势，提前触发优化（而非等效果下降后再行动） |
@@ -677,11 +677,11 @@ public record KnowledgeCollection(
 
 ## 八、关键设计决策
 
-### 8.1 为什么 skill-admin 不直接替代 psylos-agent 的编排能力？
+### 8.1 为什么 skill-admin 不直接替代 AI Agent 系统 的编排能力？
 
 skill-admin 是「治理中枢」，不是「执行引擎」。如果让 skill-admin 直接参与请求编排，会引入跨网络调用的延迟和不稳定性。正确的边界是：
 
-- **psylos-agent 自治执行**：从配置中心读取 Skill 配置后，本地完成路由、LLM 调用、RAG 检索、业务 API 调用。
+- **AI Agent 系统 自治执行**：从配置中心读取 Skill 配置后，本地完成路由、LLM 调用、RAG 检索、业务 API 调用。
 - **skill-admin 离线治理**：通过异步事件和分析数据，驱动 Skill 迭代，不介入实时请求链路。
 
 ### 8.2 为什么归因能力建议由中台建设而非 skill-admin 自建？
@@ -718,7 +718,7 @@ skill-admin 是「治理中枢」，不是「执行引擎」。如果让 skill-a
 │                              三系统联动总览                                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│   psylos-agent              psylos1-skill-admin         跨境电商业务中台    │
+│   AI Agent 系统              skill-admin         业务中台    │
 │   ├─ Skill 执行引擎    ←──→ ├─ Skill 治理中枢      ←──→ ├─ 业务数据底座   │
 │   ├─ 产生执行数据           ├─ 分析 & 优化              ├─ 提供归因数据     │
 │   └─ 上报事件               └─ 下发新版本配置           └─ 提供业务 API     │
@@ -740,6 +740,6 @@ skill-admin 是「治理中枢」，不是「执行引擎」。如果让 skill-a
 **下一步行动建议**：
 
 1. **立即启动**：skill-admin 的 Skill Registry 和 Prompt 外置化，这是所有后续能力的基础。
-2. **本月完成**：psylos-agent 执行事件上报链路打通，确保数据可观测。
+2. **本月完成**：AI Agent 系统 执行事件上报链路打通，确保数据可观测。
 3. **下月完成**：业务中台埋点接入 `skill_trace_id`，启动基础 ROI 看板建设。
 4. **持续迭代**：以「1 个 Skill 的完整优化闭环跑通」为首个验证目标（建议选择 ProductSearch 或 SeoContentFactory），验证后再规模化推广到全部 13 个 Agent。

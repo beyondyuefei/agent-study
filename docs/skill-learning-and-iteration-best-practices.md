@@ -1,6 +1,6 @@
 # Skill 学习与优化迭代：业界最佳实践与 Claude 架构深度解析
 
-> **目标**：梳理 AI Skill（Agent Capability）在业界的最佳实践，以 **Claude（Anthropic）** 为核心案例，深度拆解其设计哲学、架构模型、执行循环与迭代方法论。结合 Java/Spring AI 技术栈给出可落地的代码示例，为 psylos-agent 的 Skill 治理体系提供设计借鉴。
+> **目标**：梳理 AI Skill（Agent Capability）在业界的最佳实践，以 **Claude（Anthropic）** 为核心案例，深度拆解其设计哲学、架构模型、执行循环与迭代方法论。结合 Java/Spring AI 技术栈给出可落地的代码示例。
 >
 > **参考来源**：Anthropic 官方技术博客（Building effective agents, 2024）、Tool Use 文档、Computer Use 技术报告、MCP 协议规范。
 >
@@ -715,12 +715,12 @@ class ScreenCapture {
 
 #### Computer Use 对 Runtime 设计的启示
 
-| 挑战 | Claude 的解决方案 | 对 psylos-agent 的借鉴 |
+| 挑战 | Claude 的解决方案 | 对 AI Agent 系统 的借鉴 |
 |---|---|---|
 | **多模态输入** | 屏幕截图 → base64 → 多模态模型理解 | 视觉搜索 Agent 可复用此模式：用户上传图片 → 模型理解 → 调用工具 |
 | **长序列决策** | 模型自主判断任务进度，决定下一步 | ShoppingGuide 的多轮对话本质也是长序列，需要模型自主管理对话状态 |
 | **错误恢复** | 操作失败后，模型从截图中观察并调整策略 | Skill 执行失败时，应将错误上下文返回给模型，让其自主决策 retry 策略 |
-| **安全隔离** | Docker 沙箱 + 操作白名单 | psylos-agent 的价格抓取、竞品监控等 Skill 也应在隔离环境中执行 |
+| **安全隔离** | Docker 沙箱 + 操作白名单 | AI Agent 系统 的价格抓取、竞品监控等 Skill 也应在隔离环境中执行 |
 
 ---
 
@@ -1212,11 +1212,11 @@ public class SkillVersionManager {
 
 ---
 
-## 五、对 psylos-agent 的具体借鉴建议【三层映射】
+## 五、对 AI Agent 系统 的具体借鉴建议【三层映射】
 
 ### 5.1 架构层面
 
-| Claude 实践 | psylos-agent 现状 | 建议改进 |
+| Claude 实践 | AI Agent 系统 现状 | 建议改进 |
 |---|---|---|
 | Tool Definition 作为一等公民 | 已有 `@Tool` 注解，但 description 质量参差不齐 | 建立 Tool Description Review 机制，像审 API 一样审 Tool 描述 |
 | 上下文工程（Context Engineering） | 依赖 Spring AI Advisor Chain | 增加「上下文压缩」Advisor，在对话过长时自动总结历史 |
@@ -1225,7 +1225,7 @@ public class SkillVersionManager {
 
 ### 5.2 迭代优化层面
 
-| Claude 实践 | psylos-agent 现状 | 建议改进 |
+| Claude 实践 | AI Agent 系统 现状 | 建议改进 |
 |---|---|---|
 | Eval-Driven Development | 无系统化的 Eval 框架 | 优先建设 ProductSearch 和 SeoContentFactory 的 EvalSuite |
 | 隐式 + 显式双反馈 | 只有执行日志，无用户反馈 | 在 skill-admin 中增加 👍/👎 按钮和 Bad Case 标注 |
@@ -1240,7 +1240,7 @@ public class SkillVersionManager {
 2. **Eval Runner**：自动化执行 EvalSuite，生成回归报告
 3. **Prompt Studio**：在线编辑 Prompt + 实时预览效果 + 版本对比
 4. **Feedback Inbox**：聚合隐式反馈（指标异常）和显式反馈（人工标注）
-5. **Deployment Manager**：灰度/全量/回滚 + 与 psylos-agent 配置中心联动
+5. **Deployment Manager**：灰度/全量/回滚 + 与 AI Agent 系统 配置中心联动
 
 ---
 
@@ -1257,4 +1257,4 @@ public class SkillVersionManager {
 
 ---
 
-> **后记**：Claude 的设计理念与 Java/Spring 生态的「显式优于隐式」「可预测性优先」高度契合。在 psylos-agent 的建设中，不必追求最复杂的 Agent 架构，而应追求**最简单、最可观测、最可迭代**的 Skill Runtime 设计——这正是 Anthropic 反复强调的「从简单开始，只在必要时增加复杂度」。
+> **后记**：Claude 的设计理念与 Java/Spring 生态的「显式优于隐式」「可预测性优先」高度契合。在 AI Agent 系统 的建设中，不必追求最复杂的 Agent 架构，而应追求**最简单、最可观测、最可迭代**的 Skill Runtime 设计——这正是 Anthropic 反复强调的「从简单开始，只在必要时增加复杂度」。

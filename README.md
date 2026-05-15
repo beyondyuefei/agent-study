@@ -27,7 +27,7 @@ mvn spring-boot:run
 ## 核心源码
 
 ```
-src/main/java/com/psylos/agentstudy/react/
+src/main/java/com/psylos/agentstudy/tutorial/
 ├── ReActLoop.java        # ⭐ ReAct 外循环核心实现
 ├── ReActStep.java        # 单步记录 (Thought, Action, Observation)
 ├── Action.java           # 动作定义

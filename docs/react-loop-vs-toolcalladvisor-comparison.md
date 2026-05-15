@@ -1,6 +1,6 @@
 # Claude Code ReAct Loop 与 Spring AI ToolCallAdvisor 深度对比
 
-> **目标**：厘清 Claude Code 的「增强版 ReAct 循环」与 Spring AI `ToolCallAdvisor` 之间的关系——它们解决的问题域是否相同？技术实现是否类似？对 psylos-agent 的架构选型有什么影响？
+> **目标**：厘清 Claude Code 的「增强版 ReAct 循环」与 Spring AI `ToolCallAdvisor` 之间的关系——它们解决的问题域是否相同？技术实现是否类似？对 AI Agent 系统的架构选型有什么影响？
 >
 > **结论前置**：核心循环结构相似，但解决的问题域和技术层次完全不同。ToolCallAdvisor 只实现了 ReAct 循环中的**一个子环节**（Action Execution）。
 
@@ -286,7 +286,7 @@ ToolCallAdvisor 位于**最外层**，意味着：
 
 ---
 
-## 五、对 psylos-agent 架构选型的影响
+## 五、对 AI Agent 系统架构选型的影响
 
 ### 5.1 当前架构适合什么
 

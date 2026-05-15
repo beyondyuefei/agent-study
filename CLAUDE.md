@@ -1,7 +1,7 @@
 # Agent Study — 持久化上下文
 
 > **项目定位**：个人学习实践项目，用于深入理解 AI Agent / Skill / ReAct 的设计原理和代码实现。
-> **与公司项目的关系**：基于公司项目 `psylos1/psylos-agent`（Spring AI + JDK 21 + Qwen-plus）的技术栈，提取核心概念做简化实现，便于源码级学习和 debug。
+> 基于 Spring AI + JDK 21 技术栈，根据 Claude Code、LangChain、Kimi Code 的设计思路做简化实现，便于源码级学习和 debug。
 
 ---
 
@@ -9,7 +9,7 @@
 
 ### 1.1 为什么创建这个项目
 
-在公司项目 `psylos-agent` 中，我们正在建设一套面向跨境电商的自然流量增长 AI Agent 系统，包含 13 个 Agent（商品搜索、SEO 内容生成、社媒运营、KOL 挖掘等）。随着系统复杂度增加，需要建立 **Skill 治理体系**（skill-admin-backend）来管理 Skill 的沉淀迭代和 ROI 归因。
+在学习 AI Agent 的过程中，随着系统复杂度增加，需要建立 **Skill 治理体系**来管理 Skill 的沉淀迭代和 ROI 归因。
 
 在学习过程中，发现以下概念容易混淆，需要专门的学习项目来动手实践：
 
@@ -29,7 +29,7 @@ Phase 3: 生产级运行时（基于 claw-code 泄露源码分析，实现结构
     ↓
 Phase 4: 对比学习（对比 ReActLoop 和 ToolCallAdvisor 的实现差异）
     ↓
-Phase 5: 迁移到项目（将学到的设计应用到 psylos-agent 的具体 Skill 中）
+Phase 5: 迁移到实际项目（将学到的设计应用到具体的 Skill 中）
 ```
 
 ---
@@ -101,7 +101,7 @@ Step 6: 生成完整活动方案 → 最终输出
 agent-study/
 ├── pom.xml                                    # Maven 配置
 ├── CLAUDE.md                                  # 本文件：持久化上下文
-├── docs/                                      # 学习文档（从公司项目转移）
+├── docs/                                      # 学习文档
 │   ├── skill-learning-and-iteration-best-practices.md
 │   ├── skill-governance-and-roi-attribution-design.md
 │   └── react-loop-vs-toolcalladvisor-comparison.md
@@ -277,7 +277,7 @@ mvn test
 
 ### 5.3 对比 ToolCallAdvisor
 
-在公司项目 `psylos-agent` 中打开 `CustomerServiceAgent.java`，对比：
+在实际的 Spring AI 项目中，打开使用 ToolCallAdvisor 的代码，对比：
 
 - `ToolCallAdvisor`：在 `.call()` 内部自动完成 1-2 轮工具调用
 - `ReActLoop`：在 `.call()` 外部显式控制 N 轮循环
@@ -348,14 +348,14 @@ Hook 提供**不修改核心循环**的扩展点：
 
 ---
 
-## 七、与公司项目 psylos-agent 的映射
+## 七、与实际项目的映射
 
-| 学习项目 | 公司项目 | 说明 |
+| 学习项目 | 实际项目 | 说明 |
 |---|---|---|
-| `ReActLoop` | `AgentOrchestrator` + `Agent.execute()` | 公司项目是单次调用模式，未来长程任务需要引入 ReAct 外循环 |
-| `ToolRegistry` | `AgentRegistry` | 公司项目注册的是 Agent，学习项目注册的是 Tool |
-| `ToolExecutor` | `ToolCallAdvisor` | 公司项目由 Spring AI 框架自动执行，学习项目是手动实现便于理解 |
-| `ReActStep` | 执行日志 | 公司项目通过 `SkillExecutionReporter` 上报，学习项目保存在内存中 |
+| `ReActLoop` | `AgentOrchestrator` + `Agent.execute()` | 实际项目通常是单次调用模式，未来长程任务需要引入 ReAct 外循环 |
+| `ToolRegistry` | `AgentRegistry` | 实际项目注册的是 Agent，学习项目注册的是 Tool |
+| `ToolExecutor` | `ToolCallAdvisor` | 实际项目由 Spring AI 框架自动执行，学习项目是手动实现便于理解 |
+| `ReActStep` | 执行日志 | 实际项目通过日志系统上报，学习项目保存在内存中 |
 
 ---
 
@@ -368,7 +368,7 @@ Hook 提供**不修改核心循环**的扩展点：
 - [ ] 添加上下文压缩策略（滑动窗口 / 关键信息摘要）
 - [ ] 实现用户交互中断（长程任务中请求用户确认）
 - [ ] 对比 LangGraph 的 StateGraph 实现
-- [ ] 将学到的 ReAct 设计应用到 `price_comparison` Skill 中
+- [ ] 将学到的 ReAct 设计应用到具体的 Skill 中
 
 ---
 
