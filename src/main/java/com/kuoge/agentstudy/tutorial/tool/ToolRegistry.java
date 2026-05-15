@@ -1,4 +1,4 @@
-package com.kuoge.agentstudy.react.tool;
+package com.kuoge.agentstudy.tutorial.tool;
 
 import java.util.*;
 

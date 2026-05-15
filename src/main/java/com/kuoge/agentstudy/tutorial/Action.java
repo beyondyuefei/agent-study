@@ -1,4 +1,4 @@
-package com.kuoge.agentstudy.react;
+package com.kuoge.agentstudy.tutorial;
 
 import java.util.Map;
 

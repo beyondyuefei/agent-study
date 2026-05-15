@@ -1,7 +1,7 @@
-package com.kuoge.agentstudy.react;
+package com.kuoge.agentstudy.tutorial;
 
-import com.kuoge.agentstudy.react.tool.Tool;
-import com.kuoge.agentstudy.react.tool.ToolRegistry;
+import com.kuoge.agentstudy.tutorial.tool.Tool;
+import com.kuoge.agentstudy.tutorial.tool.ToolRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

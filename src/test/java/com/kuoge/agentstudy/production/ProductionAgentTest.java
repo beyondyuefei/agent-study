@@ -4,9 +4,9 @@ import com.kuoge.agentstudy.production.agent.ProductionReActAgent;
 import com.kuoge.agentstudy.production.context.*;
 import com.kuoge.agentstudy.production.cost.*;
 import com.kuoge.agentstudy.production.memory.*;
-import com.kuoge.agentstudy.react.Action;
-import com.kuoge.agentstudy.react.ReActLoop;
-import com.kuoge.agentstudy.react.tool.Tool;
+import com.kuoge.agentstudy.tutorial.Action;
+import com.kuoge.agentstudy.tutorial.ReActLoop;
+import com.kuoge.agentstudy.tutorial.tool.Tool;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

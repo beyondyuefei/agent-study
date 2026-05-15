@@ -25,9 +25,11 @@ Phase 1: 理解概念（阅读 docs/ 下的设计文档）
     ↓
 Phase 2: 动手实现（运行 ReActLoopTest 单元测试，单步 debug）
     ↓
-Phase 3: 对比学习（对比 ReActLoop 和 ToolCallAdvisor 的实现差异）
+Phase 3: 生产级运行时（基于 claw-code 泄露源码分析，实现结构化消息 + 自动压缩 + 权限 + 用量追踪）
     ↓
-Phase 4: 迁移到项目（将学到的设计应用到 psylos-agent 的具体 Skill 中）
+Phase 4: 对比学习（对比 ReActLoop 和 ToolCallAdvisor 的实现差异）
+    ↓
+Phase 5: 迁移到项目（将学到的设计应用到 psylos-agent 的具体 Skill 中）
 ```
 
 ---
@@ -107,7 +109,7 @@ agent-study/
 │   ├── main/
 │   │   ├── java/com/psylos/agentstudy/
 │   │   │   ├── AgentStudyApplication.java     # Spring Boot 入口
-│   │   │   ├── react/                         # 教学版 ReAct【基础学习】
+│   │   │   ├── tutorial/                      # 教学版 ReAct【基础学习】
 │   │   │   │   ├── ReActLoop.java             # ⭐ 外循环核心【必读源码】
 │   │   │   │   ├── ReActAgent.java            # 入口 Facade
 │   │   │   │   ├── ReActStep.java             # 单步记录
@@ -135,14 +137,50 @@ agent-study/
 │   │   │           ├── PromptTemplateCache.java # Prompt 缓存
 │   │   │           ├── LazyLoader.java        # 懒加载器
 │   │   │           └── CostTracker.java       # 成本追踪
+│   │   │   └── runtime/                       # 生产级运行时【基于 claw-code 精华】
+│   │   │       ├── session/                   # 结构化消息系统
+│   │   │       │   ├── AgentSession.java      # ⭐ 会话状态管理（消息 + 压缩历史 + Fork）
+│   │   │       │   ├── ConversationMessage.java # ⭐ 结构化消息（role + blocks + usage）
+│   │   │       │   ├── ContentBlock.java      # ⭐ 内容块：Text/Thinking/ToolUse/ToolResult
+│   │   │       │   └── MessageRole.java       # 消息角色枚举
+│   │   │       ├── core/                      # 核心运行时
+│   │   │       │   ├── ConversationRuntime.java # ⭐ ReAct 核心循环（对应 Rust conversation.rs）
+│   │   │       │   ├── TurnSummary.java       # Turn 执行摘要
+│   │   │       │   └── RuntimeConfig.java     # 运行时配置
+│   │   │       ├── compact/                   # 自动上下文压缩
+│   │   │       │   ├── SessionCompactor.java  # ⭐ 自动压缩（保留最近消息 + 边界保护）
+│   │   │       │   ├── CompactionConfig.java  # 压缩配置
+│   │   │       │   └── CompactionResult.java  # 压缩结果
+│   │   │       ├── permission/                # 权限策略引擎
+│   │   │       │   ├── PermissionPolicy.java  # ⭐ 权限策略（allow/deny/ask 规则）
+│   │   │       │   ├── PermissionMode.java    # 权限模式层级
+│   │   │       │   ├── PermissionOutcome.java # 权限结果
+│   │   │       │   └── PermissionRule.java    # 单条权限规则
+│   │   │       ├── usage/                     # 用量与成本追踪
+│   │   │       │   ├── UsageTracker.java      # ⭐ 累积用量追踪
+│   │   │       │   ├── TokenUsage.java        # 单次用量（input/output/cache）
+│   │   │       │   └── CostEstimator.java     # 成本估算（按模型定价）
+│   │   │       ├── hook/                      # 钩子系统
+│   │   │       │   ├── ToolHook.java          # 钩子接口（Pre/Post/Failure）
+│   │   │       │   ├── HookResult.java        # 钩子结果（可 deny/修改输入/覆盖权限）
+│   │   │       │   └── HookEvent.java         # 钩子事件类型
+│   │   │       └── client/                    # LLM 客户端接口
+    │   │   │           ├── LlmClient.java         # 结构化 LLM 客户端
+    │   │   │           └── LlmResponse.java       # 结构化响应（blocks + usage）
 │   │   └── resources/
 │   │       └── application.yml                # 配置文件
 │   └── test/
 │       └── java/com/psylos/agentstudy/
-│           ├── react/
+│           ├── tutorial/
 │           │   └── ReActLoopTest.java         # ⭐ 教学版测试（7 个场景）
-│           └── production/
-│               └── ProductionAgentTest.java   # ⭐ 生产级测试（11 个场景）
+│           ├── production/
+│           │   └── ProductionAgentTest.java   # ⭐ 生产级测试（11 个场景）
+│           └── production/runtime/
+│               ├── SessionAndMessageTest.java     # 结构化消息系统测试（9 个场景）
+│               ├── UsageAndCostTest.java          # 用量追踪测试（10 个场景）
+│               ├── PermissionTest.java            # 权限策略测试（11 个场景）
+│               ├── CompactAndHookTest.java        # 压缩+钩子测试（14 个场景）
+│               └── ConversationRuntimeTest.java   # ⭐ 核心运行时测试（14 个场景）
 ```
 
 ### 4.1 学习重点文件（按优先级排序）
@@ -151,8 +189,8 @@ agent-study/
 
 | 优先级 | 文件 | 学习目标 |
 |---|---|---|
-| P0 | `ReActLoop.java` | 理解 ReAct 外循环的六步模型 |
-| P0 | `ReActLoopTest.java` | 通过 7 个测试场景理解不同行为 |
+| P0 | `tutorial/ReActLoop.java` | 理解 ReAct 外循环的六步模型 |
+| P0 | `tutorial/ReActLoopTest.java` | 通过 7 个测试场景理解不同行为 |
 | P1 | `react-loop-vs-toolcalladvisor-comparison.md` | 对比理解外循环 vs 内循环 |
 
 #### Phase 2：生产级实现（再理解工程化增强）
@@ -165,6 +203,19 @@ agent-study/
 | P1 | `ProductionAgentTest.java` | 11 个测试场景覆盖三个核心模块 |
 | P2 | `PromptTemplateCache.java` + `LazyLoader.java` | 成本优化策略 |
 
+#### Phase 3：生产级运行时（基于 claw-code 源码精华）
+
+| 优先级 | 文件 | 学习目标 |
+|---|---|---|
+| P0 | `ConversationRuntime.java` | **Turn 内多轮迭代**（1 Turn = N 次 LLM 调用）+ 工具调用链 |
+| P0 | `ConversationMessage.java` + `ContentBlock.java` | **结构化消息**：为什么不用 StringBuilder 拼接 |
+| P0 | `AgentSession.java` | 会话状态管理 + ToolUse/ToolResult 对完整性保护 + Fork |
+| P0 | `SessionCompactor.java` | **自动压缩**：基于 token 阈值触发 + 边界保护（不拆分 Tool 对） |
+| P1 | `PermissionPolicy.java` | 权限策略引擎：allow/deny/ask 规则 + 模式层级 |
+| P1 | `UsageTracker.java` + `CostEstimator.java` | 用量追踪 + 按模型成本估算 |
+| P1 | `ToolHook.java` | 钩子系统：Pre/Post/Failure 干预工具执行 |
+| P2 | `LlmClient.java` + `LlmResponse.java` | 结构化 LLM 客户端（输入/输出都从字符串升级为结构化对象） |
+
 ---
 
 ## 五、快速开始
@@ -175,10 +226,13 @@ agent-study/
 cd /Users/liq/work/idea/ai/agent-study
 
 # 教学版 ReAct 测试（7 个场景）
-mvn test -Dtest=ReActLoopTest
+mvn test -Dtest=ReActLoopTest   # 或 tutorial.ReActLoopTest
 
 # 生产级实现测试（11 个场景）
 mvn test -Dtest=ProductionAgentTest
+
+# 生产级运行时测试（58 个场景，覆盖结构化消息/压缩/权限/用量/核心循环）
+mvn test -Dtest='production.*RuntimeTest,production.runtime.SessionAndMessageTest,production.runtime.UsageAndCostTest,production.runtime.PermissionTest,production.runtime.CompactAndHookTest'
 
 # 全部测试
 mvn test
@@ -190,9 +244,9 @@ mvn test
 
 #### 教学版 ReAct
 
-在 `ReActLoopTest.testMultiStepToolUse()` 中设置断点，观察：
+在 `tutorial/ReActLoopTest.testMultiStepToolUse()` 中设置断点，观察：
 
-1. `ReActLoop.run()` 的 `for` 循环如何执行多轮
+1. `tutorial.ReActLoop.run()` 的 `for` 循环如何执行多轮
 2. 每轮 `llmClient.call(context)` 的 `context` 如何累积
 3. `toolExecutor.execute(action)` 如何将 Observation 注入上下文
 4. `steps` 列表如何记录完整的执行轨迹
@@ -205,6 +259,21 @@ mvn test
 2. `PreferenceMemory.buildCorePreferencePrompt()` 如何筛选高置信度偏好
 3. `TokenBudget` 如何随步骤消耗累积
 4. `CostTracker` 如何记录每次 LLM 调用和工具调用
+
+#### 生产级运行时（基于 claw-code 分析）
+
+在 `ConversationRuntimeTest.testSingleToolUse()` 中设置断点，观察：
+
+1. `ConversationRuntime.runTurn()` 的 `while (true)` 循环如何执行多轮迭代
+2. 第一轮 LLM 返回 `ToolUseBlock`，第二轮返回 `TextBlock`（最终答案）
+3. `executeToolUse()` 如何串联 Hook → Permission → Tool Execution → PostHook
+4. `AgentSession.pushMessage()` 如何维护消息完整性（ToolResult 必须有前置 Assistant+ToolUse）
+5. 在 `testParallelToolUses()` 中观察：一次 Assistant 消息可包含多个 ToolUseBlock
+
+在 `CompactAndHookTest.testSessionCompactorCompactsLargeSession()` 中观察：
+1. `SessionCompactor.compact()` 如何基于 token 阈值判断是否需要压缩
+2. 压缩后保留的最近 N 条消息如何不破坏 ToolUse/ToolResult 配对
+3. 生成的结构化摘要包含哪些信息（scope、timeline、pending work、key files）
 
 ### 5.3 对比 ToolCallAdvisor
 
@@ -231,6 +300,52 @@ mvn test
 
 防止 LLM 进入无限循环（如反复调用同一工具）。Claude Code 默认限制约 50 步，本项目默认 10 步。
 
+### 6.4 为什么从 StringBuilder 升级到结构化消息（ConversationMessage + ContentBlock）
+
+教学版（`tutorial/`）使用 `StringBuilder` 拼接上下文，生产级（`production/runtime/`）使用 `List<ConversationMessage>`：
+
+| 维度 | StringBuilder | ConversationMessage |
+|---|---|---|
+| 工具调用识别 | 字符串解析（容易出错） | `ToolUseBlock` 精确提取 |
+| 多工具并行 | 不支持 | 一个 Assistant 消息可含多个 `ToolUseBlock` |
+| Token 估算 | 粗略字符数/4 | 按 block 类型精确估算 |
+| 消息完整性 | 无保护 | `AgentSession` 强制 ToolResult 必须有对应 ToolUse |
+| 思考过程 | 文本混在输出中 | `ThinkingBlock` 独立存储 |
+
+参考 claw-code Rust 实现：`session.rs/ConversationMessage` + `session.rs/ContentBlock`。
+
+### 6.5 为什么需要自动压缩（SessionCompactor）而非仅 9 段式压缩
+
+- **9 段式压缩**（`ContextCompressor`）：在**构建请求时**按业务优先级分配 token 配额，属于「静态压缩」
+- **自动压缩**（`SessionCompactor`）：在**运行时**检测 token 阈值，将旧消息总结为摘要，属于「动态压缩」
+
+两者互补：9 段式决定「什么该留」，自动压缩决定「什么时候该清理」。
+
+参考 claw-code Rust 实现：`compact.rs` 中的 `should_compact()` + `compact_session()` + ToolUse/ToolResult 边界保护。
+
+### 6.6 为什么权限系统需要规则引擎（PermissionRule）
+
+简单的 allow/deny 列表无法处理「只允许 git 命令，但禁止 rm -rf」这类细粒度需求。
+
+`PermissionRule` 支持三种匹配器：
+- `AnyMatcher`：匹配任意输入（`bash` → 匹配所有 bash 调用）
+- `ExactMatcher`：精确匹配（`bash(ls)` → 只匹配 `ls`）
+- `PrefixMatcher`：前缀匹配（`bash(git:*)` → 匹配 `git status`, `git log` 等）
+
+参考 claw-code Rust 实现：`permissions.rs/PermissionRule` + `PermissionPolicy.authorize_with_context()`。
+
+### 6.7 为什么需要 Hook 系统（ToolHook）
+
+Hook 提供**不修改核心循环**的扩展点：
+
+| 钩子 | 用途 | 示例 |
+|---|---|---|
+| `preToolUse` | 修改输入、阻止执行 | 安全审计：拦截危险命令 |
+| `postToolUse` | 修改输出、追加反馈 | 追加审计日志到 tool result |
+| `postToolUseFailure` | 错误处理、重试逻辑 | 网络超时自动重试 |
+
+参考 claw-code Rust 实现：`hooks.rs/HookRunner`（支持外部命令作为钩子）。
+
 ---
 
 ## 七、与公司项目 psylos-agent 的映射
@@ -246,8 +361,10 @@ mvn test
 
 ## 八、待探索话题（TODO）
 
+- [x] 分析 claw-code 泄露源码，提取 ReAct 精华架构（Python Porting Workspace + Rust Runtime）
+- [x] 实现生产级运行时：结构化消息 + 会话管理 + 自动压缩 + 权限 + 用量追踪 + 钩子（34 个新文件，58 个测试，全部通过）
 - [ ] 接入真实的 Spring AI ChatClient（OpenAI / DashScope）
-- [ ] 实现 LLM 响应解析器（从自然语言中提取 Thought + Action）
+- [ ] 实现 LLM 响应解析器（从自然语言/流式事件中提取 Text/Thinking/ToolUse blocks）
 - [ ] 添加上下文压缩策略（滑动窗口 / 关键信息摘要）
 - [ ] 实现用户交互中断（长程任务中请求用户确认）
 - [ ] 对比 LangGraph 的 StateGraph 实现
@@ -255,5 +372,5 @@ mvn test
 
 ---
 
-> **最后更新**：2025-05-15
+> **最后更新**：2025-05-15（包结构重构：react→tutorial，runtime→production/runtime；新增生产级运行时，基于 claw-code 分析）
 > **维护者**：个人学习项目，由 AI 辅助创建

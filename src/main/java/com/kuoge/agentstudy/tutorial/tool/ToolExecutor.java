@@ -1,7 +1,7 @@
-package com.kuoge.agentstudy.react.tool;
+package com.kuoge.agentstudy.tutorial.tool;
 
-import com.kuoge.agentstudy.react.Action;
-import com.kuoge.agentstudy.react.Observation;
+import com.kuoge.agentstudy.tutorial.Action;
+import com.kuoge.agentstudy.tutorial.Observation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 

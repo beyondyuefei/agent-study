@@ -1,4 +1,4 @@
-package com.kuoge.agentstudy.react;
+package com.kuoge.agentstudy.tutorial;
 
 /**
  * ReAct 中的 Observation（观察结果）。
