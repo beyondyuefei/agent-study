@@ -163,7 +163,7 @@ SOP 层 (.md)                    Runtime 层 (Java)              Governance 层 
 | `SkillRuntime` → `EvalSuite` | **1:N** | 一个 Skill Runtime 可配套多组 EvalSuite（单元/集成） |
 | `EvalSuite` → `EvalCase` | **1:N** | 评估套件由多条测试用例组成 |
 | `EvalCase` → `EvalResult` | **1:N** | 同一用例在不同版本/时间执行产生多条结果记录 |
-| `Skill` → `Feedback` | **1:N** | 一个 Skill 可收集多条隐式或显式反馈 |
+| `Skill` → `Feedback` |**1:N** | 一个 Skill 可收集多条隐式或显式反馈 |
 | `SkillGovernance` → `Deployment` | **1:N** | 治理层记录每次部署/灰度/回滚操作 |
 
 ### 1.3 核心模型字段

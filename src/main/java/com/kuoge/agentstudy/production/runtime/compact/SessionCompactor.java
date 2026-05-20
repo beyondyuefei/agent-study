@@ -125,27 +125,66 @@ public class SessionCompactor {
     }
 
     /**
-     * 边界保护：调整 keepFrom，确保不拆分 ToolUse/ToolResult 对。
+     * 边界保护：调整 keepFrom，确保压缩边界不落在 ToolUse/ToolResult 对的中间。
      *
-     * <p>规则：如果保留的第一条消息是 ToolResult，则它前面的 Assistant(ToolUse) 也必须保留。
+     * <h3>问题根因</h3>
+     * <p>Anthropic / OpenAI 兼容层的消息序列有一条硬约束：
+     * <b>ToolResult 消息（role=tool）前面必须有包含 ToolUse 的 Assistant 消息</b>。
+     * 违反此约束会导致 API 返回 400："tool message must follow assistant with tool_calls"。
+     *
+     * <p>压缩算法在截取"保留最近 N 条"时，如果截断点恰好落在 assistant(ToolUse) 和
+     * tool(ToolResult) 之间，就会产生一条"孤儿 ToolResult"——它被保留了，但它前面的
+     * assistant(ToolUse) 被压缩掉了。这种状态发送给 API 直接 400。
+     *
+     * <h3>复现场景（来自 Rust 实现的真实 Bug 记录）</h3>
+     * <pre>
+     * 会话消息：
+     *   [0] user:      "Search files"
+     *   [1] assistant: ToolUse("search", "{}")        ← 被压缩掉
+     *   [2] tool:      ToolResult("search", "found")  ← 成为保留区第一条，孤儿！
+     *   [3] assistant: "Done."
+     *
+     * preserveRecentMessages=2 时：rawKeepFrom=2，保留区首条是 ToolResult → 400
+     * </pre>
+     *
+     * <h3>修复思路（walk-back 算法）</h3>
+     * <ol>
+     *   <li>如果保留区首条不是 ToolResult → 安全，不用调整</li>
+     *   <li>如果是 ToolResult，检查它前面那条消息是否含 ToolUse</li>
+     *   <li>如果前面有 ToolUse → 配对完整，把 keepFrom 再向前移一位，将 Assistant 也纳入保留区</li>
+     *   <li>如果前面没有 ToolUse → 配对已经损坏（罕见），继续向前走，直到找到安全点</li>
+     * </ol>
+     *
+     * <p>对应 claw-code Rust 实现：{@code compact.rs} 的 keep_from 边界修正逻辑，
+     * 修复于 2026-04-09（Rust 注释中记为 "gaebal-gajae repro"）。
+     *
+     * @param messages     完整消息列表
+     * @param rawKeepFrom  原始保留起始索引（未经保护调整）
+     * @param minKeepFrom  不能回退超过此位置（已有摘要的起始位置）
+     * @return 调整后的安全 keepFrom 索引
      */
     private int adjustBoundary(List<ConversationMessage> messages, int rawKeepFrom, int minKeepFrom) {
         int k = rawKeepFrom;
         while (k > minKeepFrom) {
             ConversationMessage firstPreserved = messages.get(k);
-            boolean startsWithToolResult = firstPreserved.role() == MessageRole.TOOL;
-            if (!startsWithToolResult) {
+
+            // 保留区首条不是 ToolResult → 边界安全，无需调整
+            if (firstPreserved.role() != MessageRole.TOOL) {
                 break;
             }
-            // 检查前一条消息是否包含 ToolUse
+
+            // 首条是 ToolResult，检查前一条是否含 ToolUse（配对是否完整）
             ConversationMessage preceding = messages.get(k - 1);
             boolean precedingHasToolUse = preceding.role() == MessageRole.ASSISTANT && preceding.hasToolUse();
+
             if (precedingHasToolUse) {
-                // 配对完整，将 Assistant 也保留
+                // 配对完整：将 keepFrom 前移一位，把 assistant(ToolUse) 也纳入保留区
+                // 此时 [assistant(ToolUse), tool(ToolResult), ...] 成为保留区头部，满足 API 约束
                 k--;
                 break;
             }
-            // 配对已损坏，继续向前调整
+
+            // 前面那条没有 ToolUse（异常状态）：继续向前走，寻找更安全的截断点
             k--;
         }
         return k;

@@ -52,33 +52,74 @@ class CompactAndHookTest {
         assertEquals(MessageRole.SYSTEM, result.compactedSession().getMessages().get(0).role());
     }
 
+    /**
+     * 边界保护回归测试：复现"孤儿 ToolResult"问题。
+     *
+     * <p>问题场景：preserveRecentMessages=2，会话共 4 条消息：
+     * <pre>
+     *   [0] user:      "Search files"
+     *   [1] assistant: ToolUse("search")   ← rawKeepFrom=2 会把这条压缩掉
+     *   [2] tool:      ToolResult("search") ← 成为保留区首条，但前面的 ToolUse 没了 → 孤儿！
+     *   [3] assistant: "Done."
+     * </pre>
+     * 不加边界保护直接发给 API → 400: "tool message must follow assistant with tool_calls"。
+     * 加了边界保护后，keepFrom 从 2 回退到 1，把 assistant(ToolUse) 也纳入保留区。
+     */
     @Test
     void sessionCompactor_boundaryProtection_doesNotSplitToolPairs() {
+        // 用足够长的内容让 token 总量超过 CompactionConfig 的最低阈值（100），确保触发压缩
+        String padding = "x".repeat(400); // 400 chars ≈ 100 tokens，超过 clamp 后的 maxEstimatedTokens=100
         AgentSession session = new AgentSession();
-        // Turn 1: user
-        session.pushUserText("Search files");
-        // Turn 2: assistant calls tool
-        session.pushMessage(ConversationMessage.assistantWithToolUse("tu-1", "search", "{\"q\":\"*.java\"}"));
-        // Turn 3: tool result
-        session.pushMessage(ConversationMessage.toolResult("tu-1", "search", "found 5 files", false));
-        // Turn 4: assistant final
-        session.pushMessage(ConversationMessage.assistantText("Done."));
-        // Turn 5: user
-        session.pushUserText("Now edit one");
+        session.pushUserText("Search files " + padding);                                              // [0]
+        session.pushMessage(ConversationMessage.assistantWithToolUse("tu-1", "search", "{\"q\":\"*.java\", \"context\":\"" + padding + "\"}")); // [1]
+        session.pushMessage(ConversationMessage.toolResult("tu-1", "search", "found 5 files", false)); // [2]
+        session.pushMessage(ConversationMessage.assistantText("Done."));                              // [3]
 
         SessionCompactor compactor = new SessionCompactor();
-        // 只保留 1 条消息，这会尝试在 tool result 处切割
-        CompactionConfig config = new CompactionConfig(1, 1);
+        // preserveRecentMessages=2 → rawKeepFrom=2（指向 ToolResult），触发边界保护
+        CompactionConfig config = new CompactionConfig(2, 100);
+        CompactionResult result = compactor.compact(session, config);
+
+        assertTrue(result.wasCompacted(), "4 条消息 + 极低 token 阈值，应该触发压缩");
+
+        // 核心断言：保留区内不存在"孤儿 ToolResult"
+        var msgs = result.compactedSession().getMessages();
+        for (int i = 1; i < msgs.size(); i++) {
+            if (msgs.get(i).role() == MessageRole.TOOL) {
+                var prev = msgs.get(i - 1);
+                assertTrue(
+                        prev.role() == MessageRole.ASSISTANT && prev.hasToolUse(),
+                        "ToolResult at index " + i + " must be preceded by Assistant(ToolUse), " +
+                        "but preceding message role=" + prev.role() + " hasToolUse=" + prev.hasToolUse()
+                );
+            }
+        }
+    }
+
+    /**
+     * 边界保护：保留区首条是普通 Assistant 消息时不受影响。
+     */
+    @Test
+    void sessionCompactor_boundaryProtection_noAdjustmentNeededForNormalBoundary() {
+        AgentSession session = new AgentSession();
+        session.pushUserText("Hello");                          // [0]
+        session.pushMessage(ConversationMessage.assistantText("Hi")); // [1]
+        session.pushUserText("Tell me more");                   // [2]
+        session.pushMessage(ConversationMessage.assistantText("Sure.")); // [3]
+
+        SessionCompactor compactor = new SessionCompactor();
+        CompactionConfig config = new CompactionConfig(2, 1);
         CompactionResult result = compactor.compact(session, config);
 
         if (result.wasCompacted()) {
-            // 验证：没有 orphaned tool result（ToolResult 前必须有 Assistant(ToolUse)）
+            // 保留区首条是 user 或 assistant（非 ToolResult），边界无需调整
             var msgs = result.compactedSession().getMessages();
+            // 跳过 system 摘要，保留区首条不应该是裸 ToolResult
             for (int i = 1; i < msgs.size(); i++) {
                 if (msgs.get(i).role() == MessageRole.TOOL) {
                     var prev = msgs.get(i - 1);
                     assertTrue(prev.role() == MessageRole.ASSISTANT && prev.hasToolUse(),
-                            "ToolResult at index " + i + " is not preceded by Assistant(ToolUse)");
+                            "ToolResult must always follow Assistant(ToolUse)");
                 }
             }
         }
