@@ -226,7 +226,90 @@ class SkillAwareAgentTest {
         assertTrue(ex.getMessage().contains("calc"));
     }
 
-    // ========== 6. KeywordSkillRouter 单测 ==========
+    // ========== 6. 多 Agent 实例并存（业务域隔离）==========
+
+    @Test
+    void multipleAgents_perBusinessDomain_areIsolated() {
+        // 业务域 1：选品上架 Agent —— 独享 SkillRegistry / ToolRegistry / SopStore
+        SkillRegistry listingSkills = new SkillRegistry();
+        SkillSopStore listingSops = new SkillSopStore.InMemory();
+        ToolRegistry listingTools = new ToolRegistry();
+        listingSkills.register(skill("s-listing", "listing", "ecommerce", "fetch_competitor_price"));
+        listingSops.save(sop("s-listing", "compliance"));
+        listingTools.register(tool("fetch_competitor_price", "$19.99"));
+
+        // 业务域 2：AI 客服 Agent —— 完全独立
+        SkillRegistry supportSkills = new SkillRegistry();
+        SkillSopStore supportSops = new SkillSopStore.InMemory();
+        ToolRegistry supportTools = new ToolRegistry();
+        supportSkills.register(skill("s-support", "support", "service", "lookup_order"));
+        supportSops.save(sop("s-support", "empathy"));
+        supportTools.register(tool("lookup_order", "order#42 shipped"));
+
+        // 共享 LlmClient（HTTP 连接池层面）
+        AtomicReference<String> lastSystem = new AtomicReference<>();
+        AtomicInteger callCount = new AtomicInteger();
+        LlmClient sharedLlm = (system, messages) -> {
+            lastSystem.set(system);
+            int n = callCount.incrementAndGet();
+            // 偶数次调用进入工具调用分支
+            if (n % 2 == 1) {
+                String toolName = system.contains("listing")
+                        ? "fetch_competitor_price" : "lookup_order";
+                return new LlmResponse(
+                        List.of(new ContentBlock.ToolUseBlock("tu-" + n, toolName, "{}")),
+                        new TokenUsage(10, 4));
+            }
+            return LlmResponse.text("done#" + n, new TokenUsage(15, 6));
+        };
+
+        SkillAwareAgent listingAgent = SkillAwareAgent.builder()
+                .agentId("agent-listing")
+                .skillRegistry(listingSkills).sopStore(listingSops).toolRegistry(listingTools)
+                .llmClient(sharedLlm)
+                .config(SkillAwareAgentConfig.builder()
+                        .basePrompt("You are a strict product listing reviewer.")
+                        .build())
+                .build();
+
+        SkillAwareAgent supportAgent = SkillAwareAgent.builder()
+                .agentId("agent-support")
+                .skillRegistry(supportSkills).sopStore(supportSops).toolRegistry(supportTools)
+                .llmClient(sharedLlm)
+                .config(SkillAwareAgentConfig.builder()
+                        .basePrompt("You are a warm and empathetic customer support specialist.")
+                        .build())
+                .build();
+
+        // 1) 各自能正常工作
+        AgentTurnResult r1 = listingAgent.handle("listing 这款商品");
+        assertEquals("s-listing", r1.skill().getSkillId());
+        assertEquals("done#2", r1.finalAnswer());
+        assertTrue(r1.binding().composedSystemPrompt().contains("strict product listing reviewer"));
+        assertTrue(r1.binding().composedSystemPrompt().contains("compliance"));
+
+        AgentTurnResult r2 = supportAgent.handle("support 一下我的订单");
+        assertEquals("s-support", r2.skill().getSkillId());
+        assertEquals("done#4", r2.finalAnswer());
+        assertTrue(r2.binding().composedSystemPrompt().contains("empathetic customer support"));
+        assertTrue(r2.binding().composedSystemPrompt().contains("empathy"));
+
+        // 2) 关键隔离断言：listing Agent 拿不到 support 域的工具/SOP，反之亦然
+        assertFalse(r1.binding().composedSystemPrompt().contains("lookup_order"));
+        assertFalse(r1.binding().composedSystemPrompt().contains("empathy"));
+        assertFalse(r2.binding().composedSystemPrompt().contains("fetch_competitor_price"));
+        assertFalse(r2.binding().composedSystemPrompt().contains("compliance"));
+
+        // 3) Session 不共享：两个 Agent 各自计数
+        assertEquals(1, listingAgent.getTotalTurns());
+        assertEquals(1, supportAgent.getTotalTurns());
+
+        // 4) 跨 Agent 路由失败：listing Agent 不识别"order"这种纯客服词
+        assertThrows(SkillNotFoundException.class,
+                () -> listingAgent.handle("帮我退款"));
+    }
+
+    // ========== 7. KeywordSkillRouter 单测 ==========
 
     @Test
     void keywordRouter_returnsEmpty_whenNoCandidates() {

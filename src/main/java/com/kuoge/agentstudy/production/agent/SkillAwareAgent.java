@@ -23,19 +23,31 @@ import java.util.Objects;
 /**
  * Skill-Aware Agent —— Agent-centric 入口。
  *
- * <p>对应 claude code 的运行模式：一个常驻 Agent 持有所有 skills，按用户输入动态匹配
- * 调哪个 Skill，加载对应 SOP 与工具子集，再由 ConversationRuntime 执行。
+ * <p>Agent 实例持有该业务场景下所有 Skill，按用户输入动态路由到某一个 Skill，
+ * 加载对应 SOP 与工具子集，再由 ConversationRuntime 执行。
  *
- * <h3>层次关系</h3>
+ * <h3>多 Agent 部署</h3>
+ * <p>一个系统可以同时运行多个 Agent 实例 —— 不同业务场景各一个，例如：
+ * <ul>
+ *   <li>"选品上架 Agent" 实例：持有竞品分析 / 标题优化 / 图片合规 等 Skill</li>
+ *   <li>"AI 客服 Agent" 实例：持有订单查询 / 退款审批 / 情绪安抚 等 Skill</li>
+ * </ul>
+ * 每个实例独享 SkillRegistry / ToolRegistry / SkillSopStore / config / session，
+ * 互不干扰；通常共享 LlmClient（HTTP 连接池层面）。
+ *
+ * <p>这与 claude code (CLI) 单进程单 Agent 实例的形态不同：在多业务、多用户的
+ * 服务端场景下，应按业务域拆分 Agent 实例，由上层 AgentFactory / 路由层选择实例。
+ *
+ * <h3>层次关系（单个 Agent 实例内部）</h3>
  * <pre>
- * SkillAwareAgent  ← 唯一入口，常驻
- *   ├─ SkillRegistry         (多个 Skill 候选)
- *   ├─ SkillSopStore         (SOP 查询)
- *   ├─ ToolRegistry          (全局工具池)
+ * SkillAwareAgent  ← 业务域内唯一入口
+ *   ├─ SkillRegistry         (该域内的 Skill 候选)
+ *   ├─ SkillSopStore         (该域 SOP 查询)
+ *   ├─ ToolRegistry          (该域工具池)
  *   ├─ SkillRouter           (路由策略)
  *   ├─ AgentSession          (会话上下文，跨 turn 共享)
- *   ├─ LlmClient             (LLM 调用)
- *   └─ SkillAwareAgentConfig (跨 Skill 配置)
+ *   ├─ LlmClient             (LLM 调用，可跨 Agent 共享)
+ *   └─ SkillAwareAgentConfig (该 Agent 的人设与运行参数)
  * </pre>
  *
  * <h3>handle 流程</h3>
